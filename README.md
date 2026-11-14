@@ -1,16 +1,21 @@
 # Job Watcher
 
+[![Tests](https://github.com/jackcollins05/job-watcher/actions/workflows/tests.yml/badge.svg)](https://github.com/jackcollins05/job-watcher/actions/workflows/tests.yml)
+
 A Financial Data Analytics project for tracking **Finance & Banking Analyst**
-postings over time. It will eventually fetch anonymous public JSON from 15
-employers, retain daily raw snapshots, rebuild posting history, summarize source
-health, and publish a website. Production orchestration, raw-archive discovery,
-scheduling, GitHub workflows/issues, and the website are **not implemented**.
+postings over time. It fetches anonymous public JSON from 15 configured employers,
+retains daily raw snapshots, rebuilds posting history, summarizes source health,
+and prepares daily change issues. Phase 3 adds the production pipeline and
+GitHub Actions definitions. **The website and GitHub Pages are not built.**
 
 The current foundation contains normalized snapshot models, a title rule, history
 replay, status calculation, an approved source registry, JSON fetch/conversion
-adapters, explicit raw gzip read/write helpers, a live dry-run CLI, and offline tests.
-No production history or status files have been generated. Synthetic postings
-exist only in unit-test fixtures; the audit contains real saved source responses.
+adapters, raw gzip read/write helpers, dry-run and production CLIs, raw-archive
+rebuilds, issue formatting/upserts, and offline tests. **No first production run
+was performed during this Codex pass; no production raw/history/status files were
+fabricated.** Synthetic postings exist only in tests using temporary directories.
+The workflows and badge have been added as definitions; no successful GitHub
+workflow execution is claimed yet.
 
 ## Approved sources
 
@@ -162,7 +167,7 @@ This helper returns data only; it does not write `data/status.json`.
 
 ```text
 audit/                 existing reconnaissance evidence and bounded probe utility
-data/                  empty; reserved for real production artifacts
+data/                  real raw/history/status outputs after the first run
 job_watcher/
   __init__.py
   schema.py            normalized models and CSV columns
@@ -170,10 +175,19 @@ job_watcher/
   history.py           deterministic replay and explicit CSV export
   status.py            status calculation
   sources.py           approved primary/backup/drop registry
+  pipeline.py          daily production runner
+  build_history.py     raw-archive rebuild and verification CLI
+  issues.py            pure issue formatting + explicit gh publishing
+  storage.py           atomic local derived-output writes
 tests/
   test_role.py
   test_history.py
   test_status.py
+  test_pipeline.py
+  test_issues.py
+.github/workflows/
+  daily.yml
+  tests.yml
 README.md
 pyproject.toml
 .gitignore
@@ -472,7 +486,8 @@ The explicit `write_raw()` helper can write a **successful** envelope to:
 data/raw/<YYYY-MM-DD>/<source>.json.gz
 ```
 
-It is **not called by the CLI**. An envelope includes format version, source and
+It is **not called by the dry-run CLI**; the production pipeline calls it.
+An envelope includes format version, source and
 employer, the actual source configuration, UTC fetched_at, complete/error flags,
 and ordered response entries. Each entry retains the complete decoded response
 JSON plus kind (`list`/`detail`) and safe request method/URL/query/body. JSON
@@ -486,7 +501,8 @@ also contain previously saved details, which conversion can optionally use.
 UTF-8 JSON uses sorted keys and fixed separators; gzip has an empty filename and
 mtime=0. Identical envelopes produce identical bytes. Timestamp changes naturally
 change the content. Writing is atomic and refuses to overwrite an existing daily
-file; failed/partial envelopes are rejected before any directory is created.
+file by default. The production pipeline explicitly enables atomic replacement
+for same-day reruns. Failed/partial envelopes are rejected before any directory is created.
 `read_raw`, `convert_raw`, and `as_snapshot` can replay a saved file using its
 embedded configuration without the audit file, current registry, or network.
 Converters/title rules remain versioned project code needed for any rebuild.
@@ -565,3 +581,163 @@ representation, raw replay/gzip, mandatory Oracle term, and CLI continuation.
 Small fictional fixtures under `tests/fixtures/` reproduce the saved real JSON
 layouts. Tests never load or require the ignored giant audit response file;
 an autouse network guard blocks DNS and socket connections.
+
+## Daily production pipeline (Phase 3)
+
+Run from **normal macOS Terminal**, where source networking is available:
+
+```sh
+cd ~/job-watcher
+.venv/bin/python -m job_watcher.pipeline
+```
+
+This is a real production fetch command, not a smoke test. It has **no manual
+page limit**, attempts every primary source in registry order, and enables the
+approved PepsiCo multipage validation path. The adapter's completeness/stall
+checks still apply, including the existing Walmart/Citi cap guards; source failures
+are reported rather than misrepresented as successful snapshots. It never fetches
+backups or dropped employers. It performs no Git or GitHub operations itself.
+
+The pipeline captures its start instant once, converts it to UTC, and uses that
+date for **every source**, even if fetching crosses midnight. It saves each
+complete successful source envelope at:
+
+```text
+data/raw/YYYY-MM-DD/<source>.json.gz
+```
+
+For each failed source it writes no raw file and records a failed outcome with
+an error in the run result/log. Unexpected per-source exceptions also become
+failures, and remaining sources are still attempted. After fetching it loads
+**all raw files**, replays them chronologically by date/source, atomically writes
+`data/history.csv` and `data/status.json`, and prepares that date's issue body.
+Old history.csv is never an input to that rebuild. Corrupt, misdated or misnamed
+archive files fail the build rather than being silently ignored.
+
+A source failure does not fail the overall pipeline when derived outputs can be
+built correctly. Even an all-source-failure run writes truthful latest health and
+preserves earlier history, but creates no successful raw date or success-day
+increment. A filesystem/archive/derived-output error that prevents truthful
+outputs is fatal. In particular, failure to delete a stale failed-source snapshot
+cannot be silently treated as a completed run.
+
+### Same-day reruns and failure semantics
+
+- A later successful run on the same UTC date **atomically replaces** that
+  source/date gzip file. It does not append another daily observation.
+- If that source fails on the rerun, its earlier same-day raw file is **deleted**.
+  A stale success therefore cannot leak into latest status or history.
+- History and status are then rebuilt from the resulting archive. Successful raw
+  dates count once. Empty dated directories without raw files count zero times.
+- With no source raw file on a date, that source's previously open postings retain
+  their prior status/last_seen. Only a successful raw snapshot, including a truly
+  empty one, can remove absent jobs from that source.
+- Reappearance preserves first_seen/first_run, updates last_seen, reopens, and
+  clears removed_date. Each source establishes its own earliest successful raw
+  snapshot: those baseline jobs have first_run=true and are excluded from new_today.
+  No removals or new-job alerts are invented on the first production day.
+
+The fixed history column order and lowercase CSV booleans are documented above.
+The fixed status keys remain exactly `run_time`, `first_run_date`,
+`days_with_success`, `open`, `new_today`, `removed_today`, `sources`. Source entries
+are in primary registry order with `name`, `ok`, `count`. Counts are **unique
+normalized postings** in that source's latest successful raw snapshot; raw API
+result rows may include overlaps. A failed latest attempt is false/0, even when
+the source has previously open jobs. All tracked postings contribute to these
+counts; in_role is preserved separately for later presentation.
+
+### Raw-only rebuild and verification
+
+```sh
+# Recreates data/history.csv, including after deleting it:
+.venv/bin/python -m job_watcher.build_history
+# Rebuilds in memory and compares bytes without rewriting history.csv:
+.venv/bin/python -m job_watcher.build_history --verify
+```
+
+`--data-dir PATH` is available for the pipeline, rebuild and issue commands.
+Unit tests write synthetic gzip snapshots under pytest temporary directories,
+delete history.csv, rebuild again, and assert identical bytes. The reproducibility
+check needs no employer/GitHub requests and does not need audit/results.json.
+The CSV can be rebuilt from raw files alone; status additionally takes the latest
+run timestamp and configured source list. The production pipeline writes status
+on each attempt, so failure-only days remain visible even without new raw files.
+
+## Daily GitHub Issues
+
+Issue publishing is explicit and separate from fetching; the daily workflow runs
+it after a successful pipeline/reproducibility check:
+
+```sh
+# Local, offline preview of the latest prepared issue:
+.venv/bin/python -m job_watcher.issues --preview
+# Contacts GitHub; use only when ready to publish:
+.venv/bin/python -m job_watcher.issues --repo jackcollins05/job-watcher
+```
+
+The title is the pipeline's **UTC start date**, taken from status.json rather than
+the clock at issue-publishing time. The body lists NEW POSTINGS and REMOVED
+POSTINGS for that date from the latest rebuilt history, with title, employer and
+job link. Baseline first_run rows are excluded from new postings; absent changes
+are explicitly `No new postings.` / `No removed postings.`. An issue exists on
+every completed run day even if there are zero changes or failed sources.
+
+A hidden first-line ownership marker identifies this project's daily issues.
+The publisher paginates all issues, ignores PRs/unrelated issues, and updates or
+reopens the marked issue for the same date rather than duplicating it. It then
+closes only the latest earlier **project run** issue, which may be several days
+old rather than literally yesterday. It never closes unrelated date-titled issues.
+If today's create/update fails, previous issues remain open. If the previous close
+fails, a rerun safely updates today's existing issue and retries. Duplicate marked
+issues for the same date cause an explicit error for review.
+
+The implementation invokes `gh api` with structured temporary JSON files, never
+shell-interpolated issue bodies. The workflow passes the default Actions token as
+GH_TOKEN, with issues write permission; a personal access token is not required.
+Manual publishing requires an already authenticated gh environment. Preview and
+pure formatting/selection tests never contact GitHub.
+
+## GitHub Actions
+
+**Daily workflow:** [.github/workflows/daily.yml](.github/workflows/daily.yml).
+
+- Cron **`17 12 * * *`** means once daily at **12:17 UTC**, approximately **06:17
+  Central Standard Time / 07:17 Central Daylight Time**. GitHub scheduling may be
+  delayed; manual workflow_dispatch is also supported.
+- Runs only for main, checks out current main, and uses Python **3.13**. It installs
+  `.[test]`, runs pytest **before** production fetching, executes the pipeline,
+  verifies raw-only CSV reproducibility, then upserts today's issue and closes
+  the previous project's run issue.
+- Permissions are only `contents: write` and `issues: write`. A fixed concurrency
+  group prevents overlapping daily executions and does not cancel the active run.
+- Only `data/raw/`, `data/history.csv`, and `data/status.json` are staged, including
+  same-day raw deletions. It commits as `Daily job watcher run YYYY-MM-DD` using
+  the pipeline date and pushes main. No-change staging is handled without error;
+  the issue is still updated before that check. No force push is used.
+- If tests, archive validation, publishing or committing fails, subsequent steps
+  stop. Per-source fetch failures alone do not prevent correctly rebuilt outputs
+  from being committed. Review the status source entries and run logs.
+
+**Tests workflow:** [.github/workflows/tests.yml](.github/workflows/tests.yml)
+runs pytest on **push** and **pull_request**, with Python **3.13** and read-only
+contents permission. Its real repository status badge is at the top of this README;
+adding the definition does not imply a completed successful run. The daily job
+also runs its own tests before fetching; default-token automated pushes do not
+normally trigger a second GitHub Actions run.
+
+Neither workflow deploys a website or GitHub Pages. **The first real production
+run has not been performed during this implementation pass.** All production
+paths were left empty; synthetic data was restricted to test temporary directories.
+
+### First real run after reviewing these changes
+
+1. In normal Terminal, run `.venv/bin/python -m pytest` and inspect these changes.
+2. Run `.venv/bin/python -m job_watcher.pipeline` once; this writes real raw,
+   history and status data but does not stage, commit, push or publish an issue.
+3. Run `.venv/bin/python -m job_watcher.build_history --verify`, inspect
+   data/status.json (including failures), and preview the dated issue with
+   `.venv/bin/python -m job_watcher.issues --preview`.
+4. Publish the prepared issue explicitly when ready, or later enable the reviewed
+   workflow on main. The workflow itself publishes issues and commits/pushes data;
+   a manual local pipeline run does neither. Avoid overlapping local and Actions
+   production runs. Repository Issues and Actions write permissions must be enabled.

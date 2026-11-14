@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import csv
+import io
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Iterable
 
 from .role import in_role
 from .schema import HISTORY_COLUMNS, HistoryRow, Snapshot, posting_id
+from .storage import atomic_write
 
 
 def ordered_snapshots(snapshots: Iterable[Snapshot]) -> list[Snapshot]:
@@ -46,13 +48,19 @@ def build_history(snapshots: Iterable[Snapshot]) -> list[HistoryRow]:
     return [rows[key] for key in sorted(rows)]
 
 
+def history_csv(rows: Iterable[HistoryRow]) -> str:
+    """Deterministic CSV with exact columns and lowercase booleans."""
+    handle = io.StringIO(newline="")
+    writer = csv.DictWriter(handle, fieldnames=HISTORY_COLUMNS)
+    writer.writeheader()
+    for row in sorted(rows, key=lambda r: r.posting_id):
+        record = asdict(row)
+        for name in ("in_role", "first_run"):
+            record[name] = str(record[name]).lower()
+        writer.writerow(record)
+    return handle.getvalue()
+
+
 def write_history(rows: Iterable[HistoryRow], path: Path) -> None:
-    """Explicit CSV export with exact columns, sorted IDs, lowercase booleans."""
-    with Path(path).open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=HISTORY_COLUMNS)
-        writer.writeheader()
-        for row in sorted(rows, key=lambda r: r.posting_id):
-            record = asdict(row)
-            for name in ("in_role", "first_run"):
-                record[name] = str(record[name]).lower()
-            writer.writerow(record)
+    """Atomic explicit CSV export."""
+    atomic_write(path, history_csv(rows).encode("utf-8"))

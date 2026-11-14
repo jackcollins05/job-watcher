@@ -72,8 +72,8 @@ def _no_secrets(value):
             _no_secrets(item)
 
 
-def write_raw(raw, root=Path("data/raw")) -> Path:
-    """Explicit, atomic, no-overwrite writer. Not called by the dry-run CLI.
+def write_raw(raw, root=Path("data/raw"), *, replace=False) -> Path:
+    """Atomic writer; explicit replace=True supports daily production reruns.
 
     Response JSON objects are preserved, not just converted rows. JSON key order
     and gzip headers are deterministic for a given envelope. Request and response
@@ -93,7 +93,11 @@ def write_raw(raw, root=Path("data/raw")) -> Path:
         with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as handle:
             temp_name = handle.name
             handle.write(buffer.getvalue())
-        os.link(temp_name, target)  # Atomic and fails if a valid daily file exists.
+        if replace:
+            os.replace(temp_name, target)
+            temp_name = None
+        else:
+            os.link(temp_name, target)  # Default refuses an existing daily file.
     finally:
         if temp_name is not None:
             os.unlink(temp_name)
