@@ -56,7 +56,12 @@ def as_snapshot(raw):
         day = utc_timestamp(instant)[:10]
     except (ValueError, TypeError, AttributeError) as exc:
         raise AdapterError("invalid raw fetched_at") from exc
-    return Snapshot(raw["source"], day, tuple(row.as_posting() for row in rows))
+    source = Source(**raw["configuration"])
+    adapter = adapter_for(source)
+    diagnostics = adapter.diagnostics(source, raw["pages"]) if hasattr(adapter, "diagnostics") else {}
+    return Snapshot(raw["source"], day, tuple(row.as_posting() for row in rows),
+                    unresolved_source_ids=tuple(diagnostics.get("unresolved_source_ids", ())),
+                    removals_safe=diagnostics.get("removals_safe", True))
 
 
 def _no_secrets(value):

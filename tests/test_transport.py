@@ -26,19 +26,21 @@ class Runner:
         event = self.events.pop(0)
         if isinstance(event, Exception):
             raise event
-        code, status, mime, body, retry_after = event
+        code, status, mime, body, retry_after, location = event
         Path(command[command.index('--output') + 1]).write_bytes(body)
         headers = f'HTTP/1.1 {status} Fixture\r\n'
         if retry_after is not None:
             headers += f'Retry-After: {retry_after}\r\n'
+        if location is not None:
+            headers += f'Location: {location}\r\n'
         Path(command[command.index('--dump-header') + 1]).write_text(headers + '\r\n')
         return subprocess.CompletedProcess(command, code,
             f'{status:03d}\n{mime}\n{command[-1]}', 'fixture stderr (never logged)')
 
 
 def response(body=b'{"jobs": []}', *, status=200, code=0,
-             mime='application/json', retry_after=None):
-    return code, status, mime, body, retry_after
+             mime='application/json', retry_after=None, location=None):
+    return code, status, mime, body, retry_after, location
 
 
 @pytest.fixture
@@ -163,3 +165,92 @@ def test_cli_progress_is_flushed_before_transport_starts(monkeypatch, capsys):
     assert capsys.readouterr().out == ('tyson_foods: complete unique=0 reported_total=0\n'
                                        'tyson_foods: OK raw=0 normalized=0\n')
     assert printed[-1][1]['flush'] is True
+
+
+@pytest.mark.parametrize('status,expected', [(301, 'GET'), (302, 'GET'), (303, 'GET'), (307, 'POST'), (308, 'POST')])
+def test_safe_redirect_semantics_and_anonymous_requests(transport, monkeypatch, status, expected):
+    endpoint = SOURCES['wells_fargo'].endpoint
+    target = endpoint + '/'
+    runner = install(monkeypatch, response(status=status, location=target), response())
+    assert transport.request('POST', endpoint, payload={'offset': 20}) == {'jobs': []}
+    command = runner.calls[1][0]
+    assert command[-1] == target
+    assert command[command.index('--request') + 1] == expected
+    assert ('--data' in command) == (expected == 'POST')
+    assert all(not {'--cookie', '--cookie-jar', '--user', '--netrc', '-L'} & set(cmd) for cmd, _ in runner.calls)
+    assert transport.last_redirects[0]['status'] == status
+
+
+def test_workday_same_tenant_cluster_redirect_chain(transport, monkeypatch):
+    endpoint = 'https://wf.wd1.myworkdayjobs.com/wday/cxs/wf/WellsFargoJobs/jobs'
+    target = endpoint.replace('.wd1.', '.wd5.')
+    runner = install(monkeypatch, response(status=307, location=target),
+                     response(status=308, location=target + '/'), response())
+    assert transport.request('POST', endpoint, payload={'limit': 20}) == {'jobs': []}
+    assert len(runner.calls) == 3
+    assert len(transport.last_redirects) == 2
+
+
+@pytest.mark.parametrize('target', [
+    'https://unrelated.test/wday/cxs/wf/WellsFargoJobs/jobs',
+    'https://other.wd1.myworkdayjobs.com/wday/cxs/wf/WellsFargoJobs/jobs',
+    'https://wf.wd1.myworkdayjobs.com/login',
+    'https://wf.wd1.myworkdayjobs.com/wday/cxs/other/External/jobs',
+    'https://user:secret@wf.wd1.myworkdayjobs.com/wday/cxs/wf/WellsFargoJobs/jobs',
+    'http://wf.wd1.myworkdayjobs.com/wday/cxs/wf/WellsFargoJobs/jobs',
+    'https://wf.wd1.myworkdayjobs.com/wday/cxs/wf/WellsFargoJobs/jobs?login=1',
+    None,
+])
+def test_redirect_scope_rejected_before_second_request(transport, monkeypatch, target):
+    runner = install(monkeypatch, response(status=303, location=target))
+    with pytest.raises(AdapterError) as error:
+        transport.request('POST', 'https://wf.wd1.myworkdayjobs.com/wday/cxs/wf/WellsFargoJobs/jobs', payload={})
+    assert error.value.failure_class == 'redirect_validation'
+    assert len(runner.calls) == 1
+    assert 'secret' not in str(error.value)
+
+
+def test_redirect_loop_is_bounded(transport, monkeypatch):
+    endpoint = SOURCES['truist'].endpoint
+    runner = install(monkeypatch, response(status=303, location=endpoint + '/'),
+                     response(status=303, location=endpoint))
+    with pytest.raises(AdapterError, match='loop'):
+        transport.request('POST', endpoint, payload={})
+    assert len(runner.calls) == 2
+
+
+def test_redirect_hop_limit(transport, monkeypatch):
+    endpoint = 'https://wf.wd1.myworkdayjobs.com/wday/cxs/wf/WellsFargoJobs/jobs'
+    events = [response(status=307, location=endpoint.replace('.wd1.', f'.wd{i}.')) for i in range(2, 6)]
+    runner = install(monkeypatch, *events)
+    with pytest.raises(AdapterError, match='limit'):
+        transport.request('POST', endpoint, payload={})
+    assert len(runner.calls) == 4  # original request plus three followed redirects
+
+
+def test_redirected_html_is_not_a_json_success(transport, monkeypatch):
+    endpoint = SOURCES['truist'].endpoint
+    install(monkeypatch, response(status=303, location=endpoint + '/'),
+            response(b'<html>Login</html>', mime='text/html'))
+    result = fetch_source(SOURCES['truist'], transport)
+    assert not result.ok and result.failure_class == 'response_validation'
+    assert result.postings == []
+
+
+def test_redirect_trace_preserved_in_successful_raw(transport, monkeypatch):
+    source = SOURCES['wells_fargo']
+    empty = b'{"total":0,"jobPostings":[]}'
+    install(monkeypatch, response(status=303, location=source.endpoint + '/'), response(empty))
+    result = fetch_source(source, transport)
+    assert result.ok
+    trace = result.raw['pages'][0]['request']['redirects']
+    assert trace == [{'status': 303, 'from': source.endpoint, 'to': source.endpoint + '/',
+                      'method': 'POST', 'next_method': 'GET'}]
+
+
+def test_redirect_cannot_remove_oracle_analyst_query(transport, monkeypatch):
+    endpoint = SOURCES['jpmorgan_chase'].endpoint
+    install(monkeypatch, response(status=303, location=endpoint + '/'))
+    with pytest.raises(AdapterError) as exc:
+        transport.request('GET', endpoint, params={'finder': 'findReqs;Keyword=analyst,Offset=0'})
+    assert exc.value.failure_class == 'redirect_validation'

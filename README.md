@@ -27,14 +27,14 @@ successful endpoints without fetching anything at import time.
 Primary employers, in configured order:
 
 1. Tyson Foods
-2. Walmart
+2. KeyBank
 3. PepsiCo
 4. J.B. Hunt
 5. Simmons Bank
 6. Bank of America
 7. JPMorgan Chase
 8. Wells Fargo
-9. Citi
+9. Huntington Bank
 10. Truist
 11. PNC
 12. U.S. Bank
@@ -42,14 +42,19 @@ Primary employers, in configured order:
 14. Fifth Third Bank
 15. BMO
 
-Backups: **Huntington Bank** and **KeyBank**, both validated Workday sources.
+No backups remain in the approved list. **Huntington Bank** replaces Citi and
+**KeyBank** replaces Walmart, using their previously audited Workday configurations.
 
 Dropped sources: **Regions Bank** (tested endpoint returned HTTP 404), **Nestlé**
-and **Arvest Bank** (no validated anonymous JSON endpoint).
+and **Arvest Bank** (no validated anonymous JSON endpoint). **Citi and Walmart**
+are excluded from production because their 2,000-result caps prevent proven
+complete traversal. Their configurations and cap regression tests are retained
+for historical replay and testing; neither is a backup or a production selection.
 
 The 15 primaries comprise **13 Workday CXS**, **1 Oracle Recruiting Candidate
-Experience**, and **1 iCIMS/Jibe** source. With backups, 17 usable sources were
-confirmed. Only anonymous public requests are permitted; no HTML scraping,
+Experience**, and **1 iCIMS/Jibe** source, totaling 15 currently eligible
+production sources. The original audit confirmed anonymous JSON access
+for 17 employers, including the now-excluded Citi and Walmart. Only anonymous public requests are permitted; no HTML scraping,
 browser automation, credentials, cookies, private APIs or employer login.
 Application submission may require login; reading postings does not.
 
@@ -220,14 +225,14 @@ The existing audit probe was **not rerun**; no live fetch command was executed.
 | Primary employer | Source key | Adapter |
 |---|---|---|
 | Tyson Foods | tyson_foods | Workday CXS |
-| Walmart | walmart | Workday CXS |
+| KeyBank | keybank | Workday CXS |
 | PepsiCo | pepsico | iCIMS/Jibe |
 | J.B. Hunt | jb_hunt | Workday CXS |
 | Simmons Bank | simmons_bank | Workday CXS |
 | Bank of America | bank_of_america | Workday CXS |
 | JPMorgan Chase | jpmorgan_chase | Oracle Candidate Experience |
 | Wells Fargo | wells_fargo | Workday CXS |
-| Citi | citi | Workday CXS |
+| Huntington Bank | huntington_bank | Workday CXS |
 | Truist | truist | Workday CXS |
 | PNC | pnc | Workday CXS |
 | U.S. Bank | us_bank | Workday CXS |
@@ -235,7 +240,7 @@ The existing audit probe was **not rerun**; no live fetch command was executed.
 | Fifth Third Bank | fifth_third_bank | Workday CXS |
 | BMO | bmo | Workday CXS |
 
-Backups remain outside the CLI's production selection. Source endpoints, methods,
+Excluded sources remain outside the CLI's production selection; no backups remain. Source endpoints, methods,
 Oracle site number, required term, and capped-total flags live in `sources.py`.
 No additional speculative ATS adapters exist.
 
@@ -258,7 +263,7 @@ deadline**, and a **23-second subprocess guard**. The response cap is 16 MiB;
 requests have a 0.25-second delay, with at most one retry for selected transient
 curl errors or HTTP 429/502/503/504. A process-deadline failure is not retried.
 Retry-After values above 10 seconds or unparseable values fail for later retry.
-No cookies, login, auth headers, proxy credentials, redirects, HTML bootstrap,
+No cookies, login, auth headers, proxy credentials, HTML bootstrap,
 HTML parsing, or browser automation are used. A per-source transport budget of
 15,000 attempts and page budget of 5,000 bound a run; reaching either is failure.
 Those ceilings are guards, not targets. Workday uses **20 records per page**;
@@ -274,7 +279,8 @@ The curl command uses `-q`, `--retry 0`, `--proto =https`, the audit's environme
 allowlist, `Accept: application/json`, and the same `json.dumps` POST encoding with
 `Content-Type: application/json`. Query encoding also matches the audit. Curl is
 invoked directly without a shell. No `--compressed`/Accept-Encoding override or
-redirect following is enabled. Compared with the audit, the production transport
+automatic curl redirect following is enabled. Safe redirects are followed explicitly
+under the policy below. Compared with the audit, the production transport
 retains its explicit User-Agent, larger response cap, and bounded outer retry;
 response headers used for Retry-After are temporary and are not saved in raw data.
 No additional Python HTTP dependency is needed; curl must be available on PATH,
@@ -346,7 +352,8 @@ The option changes only the number of pages fetched, never Workday's configured
 20-record page size. A one-page Workday smoke test therefore requests up to 20
 jobs rather than 2.
 
-**Walmart and Citi:** if the initial reported total is exactly 2,000, traversal
+**Excluded Walmart and Citi (regression configurations only):** if the initial
+reported total is exactly 2,000, traversal
 still runs but the result is marked **FAIL**, even after an empty page, because
 the audit cannot establish complete coverage at that possible cap. No silent
 truncation, hidden search change, or invented partitioning is implemented. They
@@ -541,8 +548,9 @@ configuration. No first/last-seen, first_run, status or removal fields are set.
   categories/dates are blank; no department inference from title is performed.
 
 Parseable timestamp dates are normalized to UTC YYYY-MM-DD; timezone-free dates
-are retained as source calendar dates. Missing required IDs/titles/URLs, malformed
-JSON structures fail conversion explicitly. All three adapters deduplicate
+are retained as source calendar dates. Malformed JSON structures fail conversion
+explicitly. Workday skips individual malformed postings with diagnostics and
+removal protection as documented below; other adapters retain strict validation. All three adapters deduplicate
 overlaps by stable source identity and retain their pagination-stall safeguards.
 
 ### Live smoke tests — normal macOS Terminal only
@@ -573,7 +581,7 @@ Raw count counts received list records, not advertised totals, and includes
 overlaps. Successful runs can therefore show raw count greater than their
 deduplicated normalized count. Exit code is 1 if any source fails, else 0.
 The CLI requires `--dry-run`, continues after a source failure, and never writes
-raw/history/status files or creates Issues. Backups cannot be selected by this CLI.
+raw/history/status files or creates Issues. Backups and excluded sources cannot be selected by this CLI.
 
 Tests include every primary source's ten conversion fields and missing optional
 values, platform pagination, capped/repeated/empty/malformed responses, failure
@@ -594,7 +602,8 @@ cd ~/job-watcher
 This is a real production fetch command, not a smoke test. It has **no manual
 page limit**, attempts every primary source in registry order, and enables the
 approved PepsiCo multipage validation path. The adapter's completeness/stall
-checks still apply, including the existing Walmart/Citi cap guards; source failures
+checks still apply. Walmart and Citi are excluded from production, with their
+cap regressions retained. Source failures
 are reported rather than misrepresented as successful snapshots. It never fetches
 backups or dropped employers. It performs no Git or GitHub operations itself.
 
@@ -741,3 +750,72 @@ paths were left empty; synthetic data was restricted to test temporary directori
    workflow on main. The workflow itself publishes issues and commits/pushes data;
    a manual local pipeline run does neither. Avoid overlapping local and Actions
    production runs. Repository Issues and Actions write permissions must be enabled.
+
+### GitHub-hosted runner failures and safe retries
+
+Workday list entries with a missing/invalid `externalPath` are handled individually.
+The adapter uses a real requisition/posting ID, never a hash or a title-derived ID.
+A valid list path constructs the public URL using the configured board. If that
+path is absent, only a literal `externalUrl` returned by the API in the same
+board's supported Workday public job URL family can supply the path. Requisition
+ID and title alone do not establish a public URL. Unusable rows are skipped and
+counted in `skipped_malformed`; valid rows are retained. An entirely malformed
+nonempty result is a source failure, not an empty successful snapshot. No job
+detail requests are added.
+
+Raw responses retain skipped rows. During raw-only history rebuilding, a skipped
+row's exact known stable ID protects an existing posting from false removal and
+preserves its known metadata. An ambiguous requisition/posting suffix preserves
+prior state; a row with no usable ID suppresses removals for that source snapshot.
+New unusable rows create no incomplete history rows. If a later usable row has the
+same exact ID, its original observation date/baseline is retained. This safety can
+delay removal detection until a later clean snapshot. Source status counts remain
+normalized usable postings; logs distinguish raw rows and skipped malformed rows.
+
+Redirects are explicitly validated, with at most **three hops** and loop detection.
+Only anonymous HTTPS URLs preserving the original JSON endpoint path (a trailing
+slash may differ) and query parameters are allowed. Workday may change its wdN
+cluster host within the same tenant, or use a Workday `myworkdaysite.com` host
+while preserving the exact CXS tenant/site path. Unrelated domains, another
+board's path, credentials, login/landing paths and changed query filters are
+rejected before another request. Standard semantics apply: 303 becomes GET,
+301/302 changes POST to GET, and 307/308 preserves the method/body. Every hop keeps
+the existing timeouts, request budget and JSON validation; cookies and credentials
+are never carried. Accepted redirect metadata is retained in the raw envelope.
+Neither the successful audit curl command nor the previous production transport
+used `-L`. The old transport rejected all 3xx responses. The failing Wells Fargo
+and Truist runs did not retain Location headers, so their exact destinations and
+whether they meet this policy still require validation in Actions. HTML is never
+parsed, even after a permitted redirect.
+
+**Citi and Walmart remain subject to `board_cap_unresolved`.** The saved responses
+include real facets, but do not prove exhaustive partitions. Citi's 55 country
+facet counts sum to 4,224 despite `total=2000`; Walmart's three country facet
+counts sum to 20,238. Other facet sums differ, some facet lists contain exactly
+55 entries, and the saved requests do not validate applied-facet pagination or
+coverage of jobs with missing facet values. Consequently no untested filter,
+search term or partition strategy is introduced. A repeated/terminal page at the
+2,000 cap remains a controlled failure and produces no authoritative raw file.
+Fixing Walmart's malformed rows does not resolve its cap risk.
+
+Approved production policy: **Huntington Bank replaces Citi** and **KeyBank
+replaces Walmart** in the 15-primary registry. Neither capped board is a production
+source or backup; no backups remain. Walmart’s live page 101 repeated 20 rows with
+zero new IDs after the 2,000-result cap, confirming the completeness limitation.
+Both excluded configurations retain their cap safeguards and regression tests.
+The assignment still needs 15 complete usable production sources; a successful
+workflow with failed sources alone does not establish that coverage. Historical
+Day 1 raw, history and status files are unchanged. Future runs enumerate Huntington
+and KeyBank instead of Citi and Walmart; each promoted source’s earliest successful
+snapshot is its own baseline.
+
+After reviewing and publishing the code fixes, dispatch **Daily Job Watcher** on
+`main`. To replace the first day's outputs, the run must start while the UTC date
+is still **2026-11-14**; rerunning an old workflow later uses the actual new UTC
+date, not the old run date. Use a new dispatch after publishing, rather than
+rerunning jobs pinned to an older code revision. Review failure classes
+(`redirect_validation`, `response_validation`, `malformed_postings`,
+`board_cap_unresolved`) and skip counts. Successful same-day raw files replace
+prior files; failed sources lose stale same-day files. History/status rebuild
+from raw alone, the date counts once, and the same managed daily issue is updated.
+These fixes were tested offline; existing committed Day 1 data was not rewritten.

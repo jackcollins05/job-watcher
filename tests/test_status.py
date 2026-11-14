@@ -70,7 +70,18 @@ def test_invalid_time_and_future_snapshots_rejected():
 
 
 def test_registry_plan():
-    assert (len(PRIMARY_SOURCES), len(BACKUP_SOURCES), len(DROPPED_SOURCES)) == (15, 2, 3)
+    assert (len(PRIMARY_SOURCES), len(BACKUP_SOURCES), len(DROPPED_SOURCES)) == (15, 0, 5)
     assert len({s.key for s in PRIMARY_SOURCES + BACKUP_SOURCES + DROPPED_SOURCES}) == 20
     assert [s.employer for s in PRIMARY_SOURCES if s.search_term] == ["JPMorgan Chase"]
     assert next(s for s in PRIMARY_SOURCES if s.search_term).search_term == "analyst"
+
+
+def test_current_primary_status_includes_huntington_and_keybank_not_capped_boards():
+    snapshots = [Snapshot("huntington_bank", "2026-11-14", (job("H1"),)),
+                 Snapshot("keybank", "2026-11-14", (job("K1"),))]
+    status = build_status(snapshots, datetime(2026, 11, 14, 12, tzinfo=timezone.utc))
+    entries = {entry["name"]: entry for entry in status["sources"]}
+    assert len(entries) == 15
+    assert entries["huntington_bank"] == {"name": "huntington_bank", "ok": True, "count": 1}
+    assert entries["keybank"] == {"name": "keybank", "ok": True, "count": 1}
+    assert "citi" not in entries and "walmart" not in entries

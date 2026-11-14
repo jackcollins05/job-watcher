@@ -2,7 +2,7 @@
 
 **Evidence:** [audit/results.json](audit/results.json), successful normal macOS Terminal run, 2026-11-13T19:38:15.850653+00:00 to 2026-11-13T19:40:09.326497+00:00. This report supersedes the earlier sandbox DNS-failure assessment. This update used local files only; no network request or probe rerun was performed.
 
-**Result: 17 confirmed usable anonymous JSON sources: 15 KEEP primaries, 2 BACKUP sources, 3 DROP sources.** The requested 15 primaries satisfy the anonymous JSON/no HTML-scraping source requirement. Optional missing fields and pagination/coverage limitations are recorded below; this is source approval, not a completed production pipeline.
+**Current approved plan: 15 primary sources, no backups, 5 excluded sources.** Huntington Bank replaces Citi, and KeyBank replaces Walmart, because neither capped board has a proven complete traversal. The original reconnaissance confirmed anonymous JSON access for 17 employers, including Citi; access alone does not prove complete board coverage. The measurements below are unchanged historical audit evidence. Current production classification and source-plan sections incorporate the approved replacement. Walmart’s full live traversal repeated 20 jobs with zero new IDs at page 101. Walmart and Citi are excluded; their cap detection remains intact for regression tests.
 
 The user confirms that the saved probe ran anonymously without credentials, cookies, API keys, authentication tokens, or login. The local probe utility uses direct curl requests without HTML bootstrapping or browser state. Every usable source has multiple HTTP 200 JSON responses containing actual job records. All 15 successful Workday sources additionally return `userAuthenticated: false` and have successful JSON detail requests. PepsiCo and Oracle do not expose that flag; their anonymous access is established by the supplied run context and direct request evidence. No application was submitted.
 
@@ -15,7 +15,7 @@ Employer links preserve the previously identified official careers entries; they
 | Employer | ATS | JSON Endpoint / Pattern | Method | Anonymous JSON Confirmed? | Approx. Posting Count | Search Term Needed? | Stable Job ID? | Title? | Location? | Department? | Posted Date? | Apply URL? | Classification | HTTP / Content Type | Pagination / Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | [Tyson Foods](https://www.tysonfoods.com/careers) | Workday CXS | `https://tysonfoods.wd5.myworkdayjobs.com/wday/cxs/tysonfoods/TSN/jobs` | POST | Yes | 735 | No observed total >5,000 | Yes | Yes | Yes | Not exposed in sample | Yes: startDate + postedOn | Yes: externalUrl | KEEP | 200; `application/json` | Offsets 0 → 2; distinct IDs; detail GET 200 |
-| [Walmart](https://careers.walmart.com/us/en/home) | Workday CXS | `https://walmart.wd504.myworkdayjobs.com/wday/cxs/walmart/WalmartExternal/jobs` | POST | Yes | 2,000 | No observed total >5,000 | Yes | Yes | Yes | Not exposed in sample | Yes: startDate + postedOn | Yes: externalUrl | KEEP | 200; `application/json` | Offsets 0 → 2; distinct IDs; detail GET 200; 2,000 may be a cap |
+| [Walmart](https://careers.walmart.com/us/en/home) | Workday CXS | `https://walmart.wd504.myworkdayjobs.com/wday/cxs/walmart/WalmartExternal/jobs` | POST | Yes | 2,000 | No observed total >5,000 | Yes | Yes | Yes | Not exposed in sample | Yes: startDate + postedOn | Yes: externalUrl | DROP | 200; `application/json` | Offsets 0 → 2; distinct IDs; detail GET 200; 2,000 cap unresolved; excluded after full live traversal |
 | [Nestlé](https://www.nestle.com/jobs) | Unvalidated | Not identified | Unknown | No validated endpoint | Unknown | Undetermined | Unverified | Unverified | Unverified | Unverified | Unverified | Unverified | DROP | Not tested; `Not observed` | No validated anonymous JSON endpoint; probe skipped |
 | [Arvest Bank](https://www.arvest.com/careers) | Unvalidated | Not identified | Unknown | No validated endpoint | Unknown | Undetermined | Unverified | Unverified | Unverified | Unverified | Unverified | Unverified | DROP | Not tested; `Not observed` | No validated anonymous JSON endpoint; probe skipped |
 | [PepsiCo](https://www.pepsicojobs.com/main/jobs) | iCIMS / Jibe career site | `https://www.pepsicojobs.com/api/jobs` | GET | Yes | 2,622 | No observed total >5,000 | Yes | Yes | Yes | Yes: categories | Yes: posted_date | Yes: apply + canonical URL | KEEP | 200; `application/json; charset=utf-8` | Same page 1 repeated; next page untested |
@@ -24,15 +24,15 @@ Employer links preserve the previously identified official careers entries; they
 | [Bank of America](https://careers.bankofamerica.com/) | Workday CXS | `https://ghr.wd1.myworkdayjobs.com/wday/cxs/ghr/Lateral-US/jobs` | POST | Yes | 1,979 | No observed total >5,000 | Yes | Yes | Yes | Not exposed in sample | Yes: startDate + postedOn | Yes: externalUrl | KEEP | 200; `application/json` | Offsets 0 → 2; distinct IDs; detail GET 200 |
 | [JPMorgan Chase](https://www.jpmorganchase.com/careers) | Oracle Recruiting CE | `https://jpmc.fa.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions` | GET | Yes | 7,008 | Yes: analyst → 1,003; README required | Yes | Yes | Yes | Yes: JobFamily / JobFunction | Yes: PostedDate | Constructible from Id; untested destination | KEEP | 200; `application/json` | Filtered offsets 0 → 2; distinct IDs |
 | [Wells Fargo](https://www.wellsfargojobs.com/) | Workday CXS | `https://wf.wd1.myworkdayjobs.com/wday/cxs/wf/WellsFargoJobs/jobs` | POST | Yes | 1,474 | No observed total >5,000 | Yes | Yes | Yes | Not exposed in sample | Yes: startDate + postedOn | Yes: externalUrl | KEEP | 200; `application/json` | Offsets 0 → 2; distinct IDs; detail GET 200 |
-| [Citi](https://jobs.citi.com/) | Workday CXS | `https://citi.wd5.myworkdayjobs.com/wday/cxs/citi/2/jobs` | POST | Yes | 2,000 | No observed total >5,000 | Yes | Yes | Yes | Not exposed in sample | Yes: startDate + postedOn | Yes: externalUrl | KEEP | 200; `application/json` | Offsets 0 → 2; distinct IDs; detail GET 200; 2,000 may be a cap |
+| [Citi](https://jobs.citi.com/) | Workday CXS | `https://citi.wd5.myworkdayjobs.com/wday/cxs/citi/2/jobs` | POST | Yes | 2,000 | No observed total >5,000 | Yes | Yes | Yes | Not exposed in sample | Yes: startDate + postedOn | Yes: externalUrl | DROP | 200; `application/json` | Offsets 0 → 2; distinct IDs; detail GET 200; 2,000 cap unresolved; excluded from production after cloud run |
 | [Truist](https://careers.truist.com/us/en) | Workday CXS | `https://truist.wd1.myworkdayjobs.com/wday/cxs/truist/Careers/jobs` | POST | Yes | 1,381 | No observed total >5,000 | Yes | Yes | Yes | Not exposed in sample | Yes: startDate + postedOn | Yes: externalUrl | KEEP | 200; `application/json` | Offsets 0 → 2; distinct IDs; detail GET 200 |
 | [PNC](https://careers.pnc.com/global/en) | Workday CXS | `https://pnc.wd5.myworkdayjobs.com/wday/cxs/pnc/External/jobs` | POST | Yes | 1,889 | No observed total >5,000 | Yes | Yes | Yes | Not exposed in sample | Yes: startDate + postedOn | Yes: externalUrl | KEEP | 200; `application/json` | Offsets 0 → 2; distinct IDs; detail GET 200 |
 | [U.S. Bank](https://careers.usbank.com/global/en) | Workday CXS | `https://usbank.wd1.myworkdayjobs.com/wday/cxs/usbank/US_Bank_Careers/jobs` | POST | Yes | 1,201 | No observed total >5,000 | Yes | Yes | Yes | Not exposed in sample | Yes: startDate + postedOn | Yes: externalUrl | KEEP | 200; `application/json` | Offsets 0 → 2; distinct IDs; detail GET 200 |
 | [Capital One](https://www.capitalonecareers.com/) | Workday CXS | `https://capitalone.wd12.myworkdayjobs.com/wday/cxs/capitalone/Capital_One/jobs` | POST | Yes | 2,055 | No observed total >5,000 | Yes | Yes | Yes | Not exposed in sample | Yes: startDate + postedOn | Yes: externalUrl | KEEP | 200; `application/json` | Offsets 0 → 2; distinct IDs; detail GET 200 |
 | [Regions Bank](https://careers.regions.com/us/en) | Workday CXS | `https://regions.wd5.myworkdayjobs.com/wday/cxs/regions/Regions/jobs` | POST | No usable jobs (JSON error) | Unknown | Undetermined | Unverified | Unverified | Unverified | Unverified | Unverified | Unverified | DROP | 404; `application/json;charset=ISO-8859-1` | Current endpoint HTTP 404; JSON error, no jobs |
 | [Fifth Third Bank](https://www.53.com/content/fifth-third/en/careers.html/) | Workday CXS | `https://fifththird.wd5.myworkdayjobs.com/wday/cxs/fifththird/53careers/jobs` | POST | Yes | 993 | No observed total >5,000 | Yes | Yes | Yes | Category-like bullet only | Yes: startDate + postedOn | Yes: externalUrl | KEEP | 200; `application/json` | Offsets 0 → 2; distinct IDs; detail GET 200 |
-| [Huntington Bank](https://www.huntington.com/careers) | Workday CXS | `https://huntington.wd12.myworkdayjobs.com/wday/cxs/huntington/HNBcareers/jobs` | POST | Yes | 710 | No observed total >5,000 | Yes | Yes | Yes | Not exposed in sample | Yes: startDate + postedOn | Yes: externalUrl | BACKUP | 200; `application/json` | Offsets 0 → 2; distinct IDs; detail GET 200 |
-| [KeyBank](https://www.key.com/about/careers.html) | Workday CXS | `https://keybank.wd5.myworkdayjobs.com/wday/cxs/keybank/External_Career_Site/jobs` | POST | Yes | 569 | No observed total >5,000 | Yes | Yes | Yes | Not exposed in sample | Yes: startDate + postedOn | Yes: externalUrl | BACKUP | 200; `application/json` | Offsets 0 → 2; distinct IDs; detail GET 200 |
+| [Huntington Bank](https://www.huntington.com/careers) | Workday CXS | `https://huntington.wd12.myworkdayjobs.com/wday/cxs/huntington/HNBcareers/jobs` | POST | Yes | 710 | No observed total >5,000 | Yes | Yes | Yes | Not exposed in sample | Yes: startDate + postedOn | Yes: externalUrl | KEEP | 200; `application/json` | Offsets 0 → 2; distinct IDs; detail GET 200 |
+| [KeyBank](https://www.key.com/about/careers.html) | Workday CXS | `https://keybank.wd5.myworkdayjobs.com/wday/cxs/keybank/External_Career_Site/jobs` | POST | Yes | 569 | No observed total >5,000 | Yes | Yes | Yes | Not exposed in sample | Yes: startDate + postedOn | Yes: externalUrl | KEEP | 200; `application/json` | Offsets 0 → 2; distinct IDs; detail GET 200 |
 | [BMO](https://jobs.bmo.com/global/en/home) | Workday CXS | `https://bmo.wd3.myworkdayjobs.com/wday/cxs/bmo/External/jobs` | POST | Yes | 1,052 | No observed total >5,000 | Yes | Yes | Yes | Not exposed in sample | Yes: startDate + postedOn | Yes: externalUrl | KEEP | 200; `application/json` | Offsets 0 → 2; distinct IDs; detail GET 200 |
 
 ## Request specifications and field mappings
@@ -135,7 +135,7 @@ Search endpoint/method: **POST** `https://walmart.wd504.myworkdayjobs.com/wday/c
 - `pagination_or_repeat` at 2026-11-13T19:38:28.076519+00:00: HTTP 200, `application/json`, JSON decoded = True; curl exit 0; 2 jobs, source IDs/paths ["/job/Watertown-NY/XMLNAME--USA--Senior-Technician--Facility-Services--HVAC-Refrigeration_R-2680267", "/job/USA-VA-KING-GEORGE-05779-WM-SUPERCENTER/Pharmacy-Manager_R-2523684"]; reported total 0; payload `{"appliedFacets": {}, "limit": 2, "offset": 2, "searchText": ""}`.
 - `detail` at 2026-11-13T19:38:30.382384+00:00: HTTP 200, `application/json`, JSON decoded = True; curl exit 0; structured ID `R-2708862`, date `2026-11-13`, location "(USA) CO LITTLETON 06635 SAM'S CLUB", public URL `https://walmart.wd504.myworkdayjobs.com/WalmartExternal/job/USA-CO-LITTLETON-06635-SAMS-CLUB/Pharmacy-Tech-Certified-Sam-s--Part-Time-_R-2708862`.
 
-Classification: **KEEP** (primary).
+Current classification: **DROP / excluded from production**. Full live traversal reached 2,000 unique postings, then page 101 repeated 20 postings with no new IDs. Complete board coverage cannot be proven; KeyBank replaces Walmart.
 
 ### Nestlé
 
@@ -205,7 +205,7 @@ Search endpoint/method: **POST** `https://citi.wd5.myworkdayjobs.com/wday/cxs/ci
 - `pagination_or_repeat` at 2026-11-13T19:39:09.106958+00:00: HTTP 200, `application/json`, JSON decoded = True; curl exit 0; 2 jobs, source IDs/paths ["/job/Ciudad-De-Mexico-Distrito-Federal-Mexico/Banamex-Director-de-Desarrollo-de-Productos-Seguros_25919247", "/job/Chatsworth-California-United-States/Part-Time-Teller--20-Hours----Chatsworth-Branch_261007717"]; reported total 0; payload `{"appliedFacets": {}, "limit": 2, "offset": 2, "searchText": ""}`.
 - `detail` at 2026-11-13T19:39:12.489570+00:00: HTTP 200, `application/json`, JSON decoded = True; curl exit 0; structured ID `261008893`, date `2026-11-13`, location "Monterrey Nuevo Leon Mexico", public URL `https://citi.wd5.myworkdayjobs.com/2/job/Monterrey-Nuevo-Leon-Mexico/Banamex-Norte-Distrito-Monterrey-Oriente-Ejecutivo-de-cuenta-Pyme-Jr_261008893-1`.
 
-Classification: **KEEP** (primary).
+Current classification: **DROP / excluded from production**. Anonymous JSON access succeeded in reconnaissance, but the live 2,000-result cap prevents proven complete traversal. Huntington Bank replaces Citi; no unvalidated partitions are used.
 
 ### Truist
 
@@ -266,7 +266,7 @@ Search endpoint/method: **POST** `https://huntington.wd12.myworkdayjobs.com/wday
 - `pagination_or_repeat` at 2026-11-13T19:39:51.534589+00:00: HTTP 200, `application/json`, JSON decoded = True; curl exit 0; 2 jobs, source IDs/paths ["/job/Columbus-OH/Senior-HR-Case-Manager_R0077362-1", "/job/Easton-Ops-Cols-C-Oh/Mac-OS-Platform-Engineer-III_R0075433"]; reported total 0; payload `{"appliedFacets": {}, "limit": 2, "offset": 2, "searchText": ""}`.
 - `detail` at 2026-11-13T19:39:53.223381+00:00: HTTP 200, `application/json`, JSON decoded = True; curl exit 0; structured ID `R0074760`, date `2026-10-14`, location "Columbus, OH", public URL `https://huntington.wd12.myworkdayjobs.com/HNBcareers/job/Columbus-OH/Small-Business-Lending-Consultant_R0074760-1`.
 
-Classification: **BACKUP** (usable replacement).
+Current classification: **KEEP** (promoted from backup to primary, replacing Citi).
 
 ### KeyBank
 
@@ -275,7 +275,7 @@ Search endpoint/method: **POST** `https://keybank.wd5.myworkdayjobs.com/wday/cxs
 - `pagination_or_repeat` at 2026-11-13T19:39:57.424501+00:00: HTTP 200, `application/json`, JSON decoded = True; curl exit 0; 2 jobs, source IDs/paths ["/job/Brooklyn-OH/Lead-Closing-Officer-or-Senior-Closing-Officer---Commercial-Real-Estate-and-Syndications_R-39276", "/job/Willoughby-OH/Branch-Manager_R-43231"]; reported total 0; payload `{"appliedFacets": {}, "limit": 2, "offset": 2, "searchText": ""}`.
 - `detail` at 2026-11-13T19:39:59.880149+00:00: HTTP 200, `application/json`, JSON decoded = True; curl exit 0; structured ID `R-39912`, date `2026-11-13`, location "Overland Park, KS", public URL `https://keybank.wd5.myworkdayjobs.com/External_Career_Site/job/Overland-Park-KS/Finance-Compliance-Manager_R-39912`.
 
-Classification: **BACKUP** (usable replacement).
+Current classification: **KEEP** (promoted from backup to primary, replacing Walmart).
 
 ### BMO
 
@@ -288,17 +288,17 @@ Classification: **KEEP** (primary).
 
 ## PRIMARY SOURCES
 
-Use the requested 15 employers; the saved JSON shows no serious mandatory-field problem requiring a replacement. PepsiCo pagination and language scope remain implementation checks, and Oracle’s detail URL is constructed rather than returned.
+Use the approved revised 15 employers below. Huntington Bank replaces Citi and KeyBank replaces Walmart because complete traversal cannot be proven beyond either board’s 2,000-result cap. The original audit measurements remain evidence of anonymous JSON access; they do not prove complete production traversal. Oracle’s detail URL is constructed rather than returned.
 
 1. Tyson Foods
-2. Walmart
+2. KeyBank
 3. PepsiCo
 4. J.B. Hunt
 5. Simmons Bank
 6. Bank of America
 7. JPMorgan Chase
 8. Wells Fargo
-9. Citi
+9. Huntington Bank
 10. Truist
 11. PNC
 12. U.S. Bank
@@ -308,11 +308,12 @@ Use the requested 15 employers; the saved JSON shows no serious mandatory-field 
 
 ## BACKUPS
 
-- **Huntington Bank:** confirmed usable Workday JSON; observed total 710; two distinct list pages and JSON detail succeeded.
-- **KeyBank:** confirmed usable Workday JSON; observed total 569; two distinct list pages and JSON detail succeeded.
+None remain. Huntington Bank and KeyBank are both primary sources.
 
 ## DROPS
 
+- **Walmart:** full live pagination reached the 2,000-result cap and repeated a page. Complete safe traversal cannot be proven; replaced by KeyBank.
+- **Citi:** anonymous JSON works, but the live board reaches a 2,000-result cap and exhaustive safe partitioning is not established. Excluded from production; replaced by Huntington Bank.
 - **Regions Bank:** current POST endpoint returned HTTP **404** with a JSON error envelope, not postings. This rejects the tested endpoint, not all possible Regions interfaces.
 - **Nestlé:** no validated anonymous JSON endpoint; no request present in this run.
 - **Arvest Bank:** no validated anonymous JSON endpoint; no request present in this run.
@@ -321,11 +322,11 @@ Use the requested 15 employers; the saved JSON shows no serious mandatory-field 
 
 | Platform | Primary KEEP | BACKUP | Usable total | DROP |
 |---|---:|---:|---:|---:|
-| Workday CXS | 13 | 2 | 15 | 1 (Regions tested endpoint) |
+| Workday CXS | 13 | 0 | 13 | 3 (Walmart/Citi caps, Regions endpoint) |
 | Oracle Recruiting Candidate Experience | 1 | 0 | 1 | 0 |
 | iCIMS / Jibe career site | 1 | 0 | 1 | 0 |
 | No validated interface | 0 | 0 | 0 | 2 |
-| **Total** | **15** | **2** | **17** | **3** |
+| **Total** | **15** | **0** | **15** | **5** |
 
 ## TECHNICAL RISKS
 
@@ -342,20 +343,20 @@ Use the requested 15 employers; the saved JSON shows no serious mandatory-field 
 
 ## FINAL SOURCE PLAN
 
-**15 primary employers (KEEP):** Tyson Foods, Walmart, PepsiCo, J.B. Hunt, Simmons Bank, Bank of America, JPMorgan Chase, Wells Fargo, Citi, Truist, PNC, U.S. Bank, Capital One, Fifth Third Bank, BMO.
+**15 primary employers (KEEP):** Tyson Foods, KeyBank, PepsiCo, J.B. Hunt, Simmons Bank, Bank of America, JPMorgan Chase, Wells Fargo, Huntington Bank, Truist, PNC, U.S. Bank, Capital One, Fifth Third Bank, BMO.
 
-**2 backups (confirmed usable):** Huntington Bank, KeyBank.
+**No backups remain:** Huntington Bank (audited total 710) and KeyBank (audited total 569) are primary.
 
-**3 drops:** Regions Bank (tested endpoint 404), Nestlé (no validated endpoint), Arvest Bank (no validated endpoint).
+**5 excluded sources:** Walmart (unresolved 2,000-result cap), Citi (unresolved 2,000-result cap), Regions Bank (tested endpoint 404), Nestlé (no validated endpoint), Arvest Bank (no validated endpoint).
 
-**Primary ATS distribution:** 13 Workday CXS, 1 Oracle Recruiting Candidate Experience, 1 iCIMS/Jibe. Including backups: 15 Workday + 1 Oracle + 1 iCIMS/Jibe = 17 usable sources.
+**Primary ATS distribution:** 13 Workday CXS, 1 Oracle Recruiting Candidate Experience, 1 iCIMS/Jibe. Total: 13 Workday + 1 Oracle + 1 iCIMS/Jibe = 15 primary sources. Citi and Walmart’s original anonymous JSON access remains validated, but production completeness is not.
 
 **Required search term:** JPMorgan Chase — `analyst`, observed 7,008 unfiltered / 1,003 filtered; **README disclosure required**. No other observed count exceeds 5,000. Walmart/Citi’s possible count caps remain an explicit uncertainty, not proof their boards are below that threshold.
 
-**Fields to leave blank:** department/category for Tyson Foods, Walmart, J.B. Hunt, Simmons Bank, Bank of America, Wells Fargo, Citi, Truist, PNC, U.S. Bank, Capital One and BMO; also Huntington Bank and KeyBank if activated. Fifth Third’s normalized department/category stays blank pending interpretation of its category-like bullet. Oracle Department is null, but JobFamily/JobFunction can populate a separate category field; literal apply URL is absent, so use its constructed job-detail URL and leave any separate application-only URL blank. Any optional field absent in a future record stays null rather than being recovered from HTML.
+**Fields to leave blank:** department/category for Tyson Foods, KeyBank, J.B. Hunt, Simmons Bank, Bank of America, Wells Fargo, Huntington Bank, Truist, PNC, U.S. Bank, Capital One and BMO. Fifth Third’s normalized department/category stays blank pending interpretation of its category-like bullet. Oracle Department is null, but JobFamily/JobFunction can populate a separate category field; literal apply URL is absent, so use its constructed job-detail URL and leave any separate application-only URL blank. Any optional field absent in a future record stays null rather than being recovered from HTML.
 
 **Assignment verification:** all 15 primaries have HTTP 200 decoded JSON with real job IDs, titles and locations; structured date and job-detail/apply URL data are available or constructible. The supplied run is anonymous and has no token/login/HTML bootstrap dependency. The 15-employer anonymous JSON source requirement is met. This does not claim full-board pagination has been verified for PepsiCo or that all employers’ totals are uncapped.
 
 ## RECOMMENDED NEXT STEP
 
-Accept this source plan as the reconnaissance baseline. Before a later authorized pipeline implementation, resolve PepsiCo next-page/language behavior, Walmart/Citi count completeness, and field mappings without HTML parsing; document Oracle’s `analyst` scope in the eventual README. Those checks were not run in this local-only pass. No production pipeline, title rule, Git initialization, staging, commit, push or additional network request was performed.
+Use the revised registry for future production runs: Huntington Bank replaces Citi and KeyBank replaces Walmart; both capped boards are excluded and no backups remain. Validate KeyBank’s full dry-run from normal Terminal before the next production workflow. Cap failure guards remain in regression tests for both excluded boards. Existing Day 1 production files must remain unchanged during this registry-only pass. No network request, staging, commit or push was performed for this update. The original reconnaissance request records above remain unchanged.

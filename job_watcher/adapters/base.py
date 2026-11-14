@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 import time
 from typing import Protocol
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode, urlsplit, urljoin, parse_qsl, unquote
 
 from ..role import in_role
 from ..schema import Posting, posting_id
@@ -19,6 +19,10 @@ from ..schema import Posting, posting_id
 
 class AdapterError(ValueError):
     """Invalid response or incomplete pagination; never a successful snapshot."""
+
+    def __init__(self, message, *, failure_class="adapter_validation"):
+        super().__init__(message)
+        self.failure_class = failure_class
 
 
 class SmokeLimitReached(Exception):
@@ -118,7 +122,8 @@ class JsonTransport:
     """Use the audit probe's curl/TLS stack and hard wall-clock deadlines.
 
     Anonymous standalone GET/POST: no curlrc, proxy credentials, cookie jar,
-    redirects or compression negotiation. One bounded retry for transient curl
+    automatic redirects or compression negotiation. Validated redirects only.
+    One bounded retry for transient curl
     errors or HTTP 429/502/503/504. Never reuse employer session state.
     """
 
@@ -127,6 +132,7 @@ class JsonTransport:
             raise ValueError("transport limits must be positive (delay may be zero)")
         self.timeout, self.delay, self.remaining = timeout, delay, max_requests
         self.connect_timeout = connect_timeout
+        self.last_redirects = []
 
     def _attempt(self, method, url, payload):
         with tempfile.TemporaryDirectory(prefix="job-watcher-http-") as temp:
@@ -155,18 +161,23 @@ class JsonTransport:
                 completed = subprocess.run(command, capture_output=True, text=True,
                                            timeout=self.timeout + 3, env=env, check=False)
             except subprocess.TimeoutExpired as exc:
-                raise AdapterError(f"request timed out (process deadline {self.timeout + 3}s)") from exc
+                raise AdapterError(f"request timed out (process deadline {self.timeout + 3}s)", failure_class="timeout") from exc
             except OSError as exc:
-                raise AdapterError(f"could not execute curl ({type(exc).__name__})") from exc
+                raise AdapterError(f"could not execute curl ({type(exc).__name__})", failure_class="transport_error") from exc
             metadata = completed.stdout.splitlines()
             status = int(metadata[0]) if metadata and metadata[0].isdigit() else 0
             mime = metadata[1].split(";", 1)[0].strip().lower() if len(metadata) > 1 else ""
             retry_after = "1"
+            location = None
             if header_path.exists():
                 # Headers are temporary and never enter raw snapshots or errors.
                 for line in header_path.read_text(encoding="iso-8859-1").splitlines():
+                    if line.startswith("HTTP/"):
+                        retry_after, location = "1", None
                     if line.lower().startswith("retry-after:"):
                         retry_after = line.split(":", 1)[1].strip()
+                    if line.lower().startswith("location:"):
+                        location = line.split(":", 1)[1].strip()
             # curl's max-filesize also bounds downloads; guard independently
             # when reading the file, including with older curl versions.
             body = b""
@@ -175,7 +186,40 @@ class JsonTransport:
                     body = handle.read(16777217)
             if len(body) > 16777216:
                 raise AdapterError("response exceeded size limit")
-            return completed.returncode, status, mime, retry_after, body
+            return completed.returncode, status, mime, retry_after, body, location
+
+    @staticmethod
+    def _redirect_target(origin, current, location, status):
+        """Canonicalize within the original anonymous JSON endpoint scope."""
+        def reject():
+            raise AdapterError(f"HTTP {status}: redirect outside allowed anonymous JSON endpoint scope",
+                               failure_class="redirect_validation")
+        if not location or any(ord(ch) < 32 for ch in location) or "\\" in location:
+            reject()
+        target = urljoin(current, location)
+        try:
+            public_url(target)
+            before, after = urlsplit(origin), urlsplit(target)
+            if after.port not in (None, 443) or after.fragment:
+                reject()
+        except (ValueError, AdapterError):
+            reject()
+        # Never turn a job-search POST into a landing-page or login navigation.
+        if (unquote(after.path).rstrip("/") != unquote(before.path).rstrip("/") or
+                any(part in ("..", ".") for part in unquote(after.path).split("/"))):
+            reject()
+        if sorted(parse_qsl(after.query, keep_blank_values=True)) != sorted(parse_qsl(before.query, keep_blank_values=True)):
+            reject()  # Includes preserving Oracle's mandatory keyword finder.
+        allowed = after.hostname == before.hostname
+        if before.path.startswith("/wday/cxs/"):
+            import re
+            parts = before.path.split("/")
+            tenant = parts[3] if len(parts) > 4 else ""
+            allowed = allowed or bool(re.fullmatch(re.escape(tenant) + r"\.wd\d+\.myworkdayjobs\.com", after.hostname or ""))
+            allowed = allowed or bool(re.fullmatch(r"wd\d+\.myworkdaysite\.com", after.hostname or ""))
+        if not allowed:
+            reject()
+        return target
 
     def request(self, method, url, *, params=None, payload=None):
         public_url(url)
@@ -183,34 +227,55 @@ class JsonTransport:
             raise AdapterError("unsupported request method")
         if params:
             url += "?" + urlencode(params)
-        for attempt in range(2):
+        origin, visited = url, {url}
+        self.last_redirects = []
+        attempt = 0
+        while True:
             if self.remaining <= 0:
                 raise AdapterError("request safety limit reached; incomplete source")
             self.remaining -= 1
             time.sleep(self.delay)
-            code, status, mime, retry_after, body = self._attempt(method, url, payload)
+            code, status, mime, retry_after, body, location = self._attempt(method, url, payload)
             if code:
                 if code == 28:
                     reason = f"request timed out (curl total deadline {self.timeout}s)"
                 else:
                     reason = f"curl transport failure (exit {code})"
                 if not attempt and code in (5, 6, 7, 28, 52, 56):
+                    attempt += 1
                     time.sleep(1)
                     continue
-                raise AdapterError(reason)
+                raise AdapterError(reason, failure_class="timeout" if code == 28 else "transport_error")
+            if status in (301, 302, 303, 307, 308):
+                target = self._redirect_target(origin, url, location, status)
+                if target in visited or len(self.last_redirects) >= 3:
+                    raise AdapterError(f"HTTP {status}: redirect loop or redirect limit exceeded",
+                                       failure_class="redirect_validation")
+                # Standard redirect semantics: 303 => GET; 301/302 rewrite POST
+                # to GET; 307/308 preserve method and JSON body. Never replay a
+                # POST through curl -X POST -L's potentially surprising behavior.
+                next_method = "GET" if status == 303 or (status in (301, 302) and method == "POST") else method
+                self.last_redirects.append({"status": status, "from": url, "to": target,
+                                            "method": method, "next_method": next_method})
+                visited.add(target)
+                if next_method == "GET":
+                    payload = None
+                method, url = next_method, target
+                continue
             if not 200 <= status < 300:
                 if not attempt and status in (429, 502, 503, 504):
                     if not retry_after.isdigit() or int(retry_after) > 10:
-                        raise AdapterError(f"HTTP {status}; retry deferred")
+                        raise AdapterError(f"HTTP {status}; retry deferred", failure_class="http_status")
                     time.sleep(int(retry_after))
+                    attempt += 1
                     continue
-                raise AdapterError(f"HTTP {status}")
+                raise AdapterError(f"HTTP {status}", failure_class="http_status")
             if mime != "application/json" and not mime.endswith("+json"):
-                raise AdapterError("response is not JSON")
+                raise AdapterError("response is not JSON", failure_class="response_validation")
             try:
                 document = json.loads(body)
             except (ValueError, UnicodeError) as exc:
-                raise AdapterError("invalid JSON response") from exc
+                raise AdapterError("invalid JSON response", failure_class="response_validation") from exc
             return object_payload(document)
 
 
@@ -240,4 +305,7 @@ class Capture:
         response = self.transport.request(method, url, params=params, payload=payload)
         self.pages.append({"kind": kind, "request": {"method": method, "url": url,
                            "params": params, "payload": payload}, "response": response})
+        redirects = getattr(self.transport, "last_redirects", [])
+        if redirects:
+            self.pages[-1]["request"]["redirects"] = list(redirects)
         return object_payload(response)

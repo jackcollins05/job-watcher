@@ -16,11 +16,13 @@ from job_watcher.adapters.jibe import JIBE_PAGE_SIZE, JibeAdapter
 from job_watcher.fetch import fetch_source, main
 from job_watcher.raw import as_snapshot, convert_raw, envelope, read_raw, write_raw
 from job_watcher.schema import posting_id
-from job_watcher.sources import PRIMARY_SOURCES
+from job_watcher.sources import PRIMARY_SOURCES, DROPPED_SOURCES
 
 FIXTURES = json.loads((Path(__file__).parent / "fixtures" / "adapters.json").read_text())
 NOW = datetime(2026, 11, 2, 12, tzinfo=timezone.utc)
 SOURCES = {s.key: s for s in PRIMARY_SOURCES}
+# Retain cap regressions for excluded Citi without treating it as production.
+CAP_SOURCES = {s.key: s for s in PRIMARY_SOURCES + DROPPED_SOURCES}
 
 
 class FakeTransport:
@@ -135,12 +137,12 @@ def test_capped_boards_fail_instead_of_claiming_complete(key):
     first = fixture("workday_list")
     first["total"] = 2000
     first["jobPostings"] = []
-    result = fetch_source(SOURCES[key], FakeTransport(first), fetched_at=NOW)
+    result = fetch_source(CAP_SOURCES[key], FakeTransport(first), fetched_at=NOW)
     assert not result.ok and "incomplete" in result.error
     # Simulate arrival at the advertised cap without hundreds of fixture rows.
     first = workday_batch(0, 2000, 2000)
-    result = fetch_source(SOURCES[key], FakeTransport(first, {"total": 0, "jobPostings": []}), fetched_at=NOW)
-    assert not result.ok and "capped" in result.error
+    result = fetch_source(CAP_SOURCES[key], FakeTransport(first, {"total": 0, "jobPostings": []}), fetched_at=NOW)
+    assert not result.ok and result.failure_class == "board_cap_unresolved"
 
 
 def test_repeat_pages_and_max_pages_fail_not_truncate():
@@ -547,8 +549,8 @@ def test_untrusted_zero_total_uses_normal_empty_page_completion():
 def test_capped_total_reached_followed_by_repeat_is_not_success(key):
     first = workday_batch(0, 2000, 2000)
     fake = FakeTransport(first, deepcopy(first))
-    result = fetch_source(SOURCES[key], fake)
-    assert not result.ok and "pagination stalled" in result.error
+    result = fetch_source(CAP_SOURCES[key], fake)
+    assert not result.ok and result.failure_class == "board_cap_unresolved"
     assert not result.raw["complete"] and result.postings == []
     assert len(fake.calls) == 2
 

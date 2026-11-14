@@ -25,24 +25,36 @@ def build_history(snapshots: Iterable[Snapshot]) -> list[HistoryRow]:
     """Replay observations; absent/failed sources cannot close any postings."""
     rows: dict[str, HistoryRow] = {}
     initialized: set[str] = set()
+    unresolved_seen = {}
     for snapshot in ordered_snapshots(snapshots):
         if not snapshot.ok:
             continue
         first = snapshot.source not in initialized
+        for source_id in snapshot.unresolved_source_ids:
+            unresolved_seen.setdefault(posting_id(snapshot.source, source_id), (snapshot.date, first))
         present = set()
         for posting in snapshot.postings:
             key = posting_id(snapshot.source, posting.source_id)
             present.add(key)
             previous = rows.get(key)
+            earlier_unresolved = unresolved_seen.get(key)
             rows[key] = HistoryRow(
                 posting_id=key, source=snapshot.source, **asdict(posting),
                 in_role=in_role(posting.title),
-                first_run=previous.first_run if previous else first,
-                first_seen=previous.first_seen if previous else snapshot.date,
+                first_run=previous.first_run if previous else (earlier_unresolved[1] if earlier_unresolved else first),
+                first_seen=previous.first_seen if previous else (earlier_unresolved[0] if earlier_unresolved else snapshot.date),
                 last_seen=snapshot.date, status="open", removed_date="",
             )
         for key, row in list(rows.items()):
-            if row.source == snapshot.source and row.status == "open" and key not in present:
+            if row.source != snapshot.source or key in present:
+                continue
+            if row.source_id in snapshot.unresolved_source_ids:
+                # The real ID is present, even though a new usable URL/title was
+                # unavailable. Reuse known metadata; never invent a posting row.
+                rows[key] = replace(row, last_seen=snapshot.date, status="open", removed_date="")
+            elif any(row.source_id.startswith(source_id + "-") for source_id in snapshot.unresolved_source_ids):
+                continue  # Ambiguous requisition/posting suffix: preserve state.
+            elif snapshot.removals_safe and row.status == "open":
                 rows[key] = replace(row, status="removed", removed_date=snapshot.date)
         initialized.add(snapshot.source)
     return [rows[key] for key in sorted(rows)]

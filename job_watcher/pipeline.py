@@ -14,6 +14,7 @@ from .raw import as_snapshot, utc_timestamp, write_raw
 from .sources import PRIMARY_SOURCES
 from .status import build_status
 from .storage import atomic_write
+from .adapters.base import AdapterError
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,9 @@ class SourceOutcome:
     ok: bool
     count: int
     error: str = ""
+    failure_class: str = ""
+    raw_count: int = 0
+    skipped_malformed: int = 0
 
 
 @dataclass
@@ -61,22 +65,29 @@ def run_pipeline(data_dir=Path("data"), *, started_at=None,
                              validate_pepsico_pagination=True,
                              progress=(lambda msg, key=source.key: progress(f"{key}: {msg}")) if progress else None)
             if not result.ok or result.truncated:
-                raise ValueError(result.error or "source returned an incomplete snapshot")
+                raise AdapterError(result.error or "source returned an incomplete snapshot",
+                                   failure_class=result.failure_class or "source_validation")
             snapshot = as_snapshot(result.raw)
             if (result.source != source.key or snapshot.source != source.key or
                     snapshot.date != day or result.raw["employer"] != source.employer):
                 raise ValueError("fetched raw identity/date mismatch")
             write_raw(result.raw, data_dir / "raw", replace=True)
-            outcome = SourceOutcome(source.key, True, len(snapshot.postings))
+            outcome = SourceOutcome(source.key, True, len(snapshot.postings), raw_count=result.count,
+                                    skipped_malformed=result.diagnostics.get("skipped_malformed", 0))
         except Exception as exc:
             # Failure MUST remove an earlier successful raw file for this day.
             # If unlink itself fails, abort: stale evidence cannot be called failed.
             target.unlink(missing_ok=True)
-            outcome = SourceOutcome(source.key, False, 0, f"{type(exc).__name__}: {exc}")
+            reason = " ".join(str(exc).split())[:240]
+            outcome = SourceOutcome(source.key, False, 0, reason,
+                                    failure_class=getattr(exc, "failure_class", "unexpected_error"))
         outcomes.append(outcome)
         if progress:
-            progress(f"{source.key}: {'OK' if outcome.ok else 'FAIL'} count={outcome.count}" +
-                     (f" {outcome.error}" if outcome.error else ""))
+            if outcome.ok:
+                progress(f"{source.key}: OK raw={outcome.raw_count} normalized={outcome.count} "
+                         f"skipped_malformed={outcome.skipped_malformed}")
+            else:
+                progress(f"{source.key}: FAIL {outcome.failure_class} {outcome.error}")
 
     snapshots = load_archive(data_dir / "raw")
     rows = build_history(snapshots)

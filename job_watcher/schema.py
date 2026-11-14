@@ -47,16 +47,20 @@ class Posting:
 
 @dataclass(frozen=True)
 class Snapshot:
-    """One complete source/day: ok=True is removal-authoritative, even if empty.
+    """One complete source/day, with explicit malformed-row removal protection.
 
     Failures are run observations, not raw files. Partial/invalid fetches must
     become ok=False; never pass a partial successful snapshot to the builder.
+    Exact unresolved IDs preserve observed jobs; unidentified malformed rows
+    suppress removals for that snapshot. These are derived from raw responses.
     """
 
     source: str
     date: str
     postings: tuple[Posting, ...] = ()
     ok: bool = True
+    unresolved_source_ids: tuple[str, ...] = ()
+    removals_safe: bool = True
 
     def __post_init__(self):
         validate_date(self.date)
@@ -64,6 +68,9 @@ class Snapshot:
         if type(self.ok) is not bool:
             raise ValueError("ok must be a bool")
         object.__setattr__(self, "postings", tuple(self.postings))
+        object.__setattr__(self, "unresolved_source_ids", tuple(self.unresolved_source_ids))
+        if type(self.removals_safe) is not bool or any(not isinstance(x, str) or not x for x in self.unresolved_source_ids):
+            raise ValueError("invalid unresolved posting evidence")
         if not self.ok and self.postings:
             raise ValueError("failed snapshots cannot contain postings")
         ids = [p.source_id for p in self.postings]
