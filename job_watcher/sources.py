@@ -1,6 +1,6 @@
 """Approved source plan, transcribed from local successful audit evidence.
 
-No fetching and no import-time file/network access. Adapters are not implemented.
+No fetching and no import-time file/network access.
 JPMorgan Chase MUST use analyst (7,008 -> 1,003 in the approved audit).
 """
 
@@ -18,18 +18,20 @@ class Source:
     method: str | None
     search_term: str = ""
     notes: str = ""
+    site_number: str = ""
+    capped_total_risk: bool = False
 
 
 PRIMARY_SOURCES = (
     Source('tyson_foods', 'Tyson Foods', 'Workday CXS', 'https://tysonfoods.wd5.myworkdayjobs.com/wday/cxs/tysonfoods/TSN/jobs', 'POST', '', ''),
-    Source('walmart', 'Walmart', 'Workday CXS', 'https://walmart.wd504.myworkdayjobs.com/wday/cxs/walmart/WalmartExternal/jobs', 'POST', '', 'Observed total 2000 may be capped.'),
+    Source('walmart', 'Walmart', 'Workday CXS', 'https://walmart.wd504.myworkdayjobs.com/wday/cxs/walmart/WalmartExternal/jobs', 'POST', '', 'Observed total 2000 may be capped.', capped_total_risk=True),
     Source('pepsico', 'PepsiCo', 'iCIMS / Jibe', 'https://www.pepsicojobs.com/api/jobs', 'GET', '', 'Tested lang=en-us, limit=2, page=1. Next page and language scope unresolved.'),
     Source('jb_hunt', 'J.B. Hunt', 'Workday CXS', 'https://jbhunt.wd501.myworkdayjobs.com/wday/cxs/jbhunt/Careers/jobs', 'POST', '', ''),
     Source('simmons_bank', 'Simmons Bank', 'Workday CXS', 'https://simmonsbank.wd5.myworkdayjobs.com/wday/cxs/simmonsbank/SimmonsCareers/jobs', 'POST', '', ''),
     Source('bank_of_america', 'Bank of America', 'Workday CXS', 'https://ghr.wd1.myworkdayjobs.com/wday/cxs/ghr/Lateral-US/jobs', 'POST', '', ''),
-    Source('jpmorgan_chase', 'JPMorgan Chase', 'Oracle Recruiting CE', 'https://jpmc.fa.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions', 'GET', 'analyst', 'Public site CX_1001; finder findReqs with keyword=analyst. README must disclose search term.'),
+    Source('jpmorgan_chase', 'JPMorgan Chase', 'Oracle Recruiting CE', 'https://jpmc.fa.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions', 'GET', 'analyst', 'Public site CX_1001; finder findReqs with keyword=analyst. README must disclose search term.', site_number='CX_1001'),
     Source('wells_fargo', 'Wells Fargo', 'Workday CXS', 'https://wf.wd1.myworkdayjobs.com/wday/cxs/wf/WellsFargoJobs/jobs', 'POST', '', ''),
-    Source('citi', 'Citi', 'Workday CXS', 'https://citi.wd5.myworkdayjobs.com/wday/cxs/citi/2/jobs', 'POST', '', 'Observed total 2000 may be capped.'),
+    Source('citi', 'Citi', 'Workday CXS', 'https://citi.wd5.myworkdayjobs.com/wday/cxs/citi/2/jobs', 'POST', '', 'Observed total 2000 may be capped.', capped_total_risk=True),
     Source('truist', 'Truist', 'Workday CXS', 'https://truist.wd1.myworkdayjobs.com/wday/cxs/truist/Careers/jobs', 'POST', '', ''),
     Source('pnc', 'PNC', 'Workday CXS', 'https://pnc.wd5.myworkdayjobs.com/wday/cxs/pnc/External/jobs', 'POST', '', ''),
     Source('us_bank', 'U.S. Bank', 'Workday CXS', 'https://usbank.wd1.myworkdayjobs.com/wday/cxs/usbank/US_Bank_Careers/jobs', 'POST', '', ''),

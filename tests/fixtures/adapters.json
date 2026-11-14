@@ -1,0 +1,20 @@
+{
+  "workday_list": {
+    "total": 1,
+    "jobPostings": [{"externalPath": "/job/Chicago/Finance-Analyst_REQ001", "title": "Finance Analyst", "locationsText": "2 Locations", "postedOn": "Posted Today", "bulletFields": ["REQ001", "Posting End Date: 12/31/2026"]}],
+    "facets": [],
+    "userAuthenticated": false
+  },
+  "workday_detail": {
+    "jobPostingInfo": {"id": "posting-uuid-001", "jobReqId": "REQ001", "jobPostingId": "Finance-Analyst_REQ001", "title": "Finance Analyst", "location": "Chicago", "additionalLocations": ["Dallas"], "startDate": "2026-11-01", "postedOn": "Posted Today", "externalUrl": "https://example.test/jobs/REQ001"},
+    "userAuthenticated": false
+  },
+  "oracle_list": {
+    "items": [{"TotalJobsCount": 1, "Keyword": "analyst", "SiteNumber": "CX_1001", "Offset": 0, "Limit": 2, "requisitionList": [{"Id": "210001", "Title": "Finance Analyst", "PrimaryLocation": "Chicago", "JobFamily": "Analysts", "JobFunction": "Finance", "Department": null, "PostedDate": "2026-11-01"}]}],
+    "count": 1, "hasMore": false, "limit": 25, "offset": 0
+  },
+  "jibe_list": {
+    "totalCount": 1, "count": 1, "languageCounts": {"en-us": {"count": 1}},
+    "jobs": [{"data": {"req_id": "REQ001", "slug": "REQ001", "language": "en-us", "title": "Finance Analyst", "full_location": "Chicago", "city": "Chicago", "state": "Illinois", "country": "United States", "categories": [{"name": "Finance"}], "category": ["Finance"], "posted_date": "2026-11-01T12:00:00+0000", "apply_url": "https://example.test/apply/REQ001/login", "ats_code": "icims", "meta_data": {"canonical_url": "https://example.test/jobs/REQ001"}}}]
+  }
+}
