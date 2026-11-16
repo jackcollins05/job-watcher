@@ -222,3 +222,45 @@ def test_default_pipeline_attempts_every_primary_even_if_all_fail(tmp_path):
     assert result.status["first_run_date"] is None and result.status["days_with_success"] == 0
     assert all(not source["ok"] and source["count"] == 0 for source in result.status["sources"])
     assert not list((tmp_path / "raw").glob("*/*.json.gz"))
+
+
+def test_primary_backup_runs_share_one_success_raw_date_and_issue(tmp_path):
+    from test_issues import FakeIssues
+    from job_watcher.issues import owned_day, publish_daily
+    client = FakeIssues()
+    for hour, ids in ((12, ['001']), (19, ['002'])):
+        result = run_pipeline(tmp_path, sources=SOURCES, started_at=instant(1, hour),
+                              fetcher=fetcher_for({'alpha': ids, 'beta': ['101']}))
+        publish_daily(client, result.issue_title, result.issue_body)
+        assert result.status['days_with_success'] == 1
+        assert [p.name for p in (tmp_path / 'raw').iterdir()] == ['2026-01-01']
+        assert len(list((tmp_path / 'raw/2026-01-01').glob('*.json.gz'))) == 2
+        assert [owned_day(i) for i in client.issues] == ['2026-01-01']
+        rebuild_history(tmp_path, verify=True)
+    assert [call[0] for call in client.calls] == ['create', 'update']
+    assert set(index(result)) == {'alpha:002', 'beta:101'}
+
+
+def test_daily_workflow_redundant_schedules_and_manual_dispatch():
+    from pathlib import Path
+    import re
+    workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/daily.yml').read_text()
+    assert re.findall(r"^    - cron: '([^']+)'$", workflow, re.M) == ['17 12 * * *', '47 19 * * *']
+    assert re.search(r'^  workflow_dispatch:\s*$', workflow, re.M)
+    assert 'group: job-watcher-daily' in workflow and 'cancel-in-progress: false' in workflow
+    assert 'issues: write' in workflow
+    assert "if: github.ref == 'refs/heads/main'" in workflow
+
+
+def test_oversized_pipeline_issue_keeps_complete_history(tmp_path):
+    import csv
+    from job_watcher.issues import MAX_ISSUE_BYTES
+    run(tmp_path, 1, {'alpha': [], 'beta': []})
+    result = run(tmp_path, 2, {'alpha': [f'{i:04}' for i in range(1000)], 'beta': []})
+    assert 'Report shortened' in result.issue_body
+    assert len(result.issue_body.encode('utf-8')) <= MAX_ISSUE_BYTES
+    assert 'New postings: 1000; removed postings: 0.' in result.issue_body
+    with (tmp_path / 'history.csv').open(newline='') as handle:
+        assert len(list(csv.DictReader(handle))) == 1000
+    assert len(result.history) == 1000
+    rebuild_history(tmp_path, verify=True)

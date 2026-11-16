@@ -4,6 +4,7 @@ import argparse
 import csv
 from datetime import datetime
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -12,6 +13,9 @@ from urllib.parse import quote
 
 from .raw import utc_timestamp
 from .schema import HISTORY_COLUMNS, HistoryRow, validate_date
+
+MAX_ISSUE_BYTES = 48_000
+MAX_DIAGNOSTIC_CHARS = 1_000
 
 MARKER_PREFIX = "<!-- job-watcher:daily:v1 date="
 
@@ -31,17 +35,41 @@ def format_issue(rows, day):
     rows = sorted(rows, key=lambda row: row.posting_id)
     new = [r for r in rows if r.first_seen == day and not r.first_run]
     removed = [r for r in rows if r.removed_date == day and r.status == "removed"]
-    lines = [marker(day), "", f"Job Watcher daily changes for {day} (UTC).", "", "## NEW POSTINGS", ""]
-    for group, none, title in ((new, "No new postings.", ""),
-                              (removed, "No removed postings.", "## REMOVED POSTINGS")):
-        if title:
-            lines += ["", title, ""]
-        if not group:
-            lines.append(none)
-        for row in group:
-            url = quote(row.url, safe=":/?&=%#@+;,~!$*()-._")
-            lines.append(f"- [{_text(row.title)}](<{url}>) — {_text(row.employer)}")
-    return "\n".join(lines) + "\n"
+    header = [marker(day), "", f"Job Watcher daily changes for {day} (UTC).", "",
+              f"New postings: {len(new)}; removed postings: {len(removed)}."]
+    groups = (new, removed)
+    rendered = []
+    for group in groups:
+        rendered.append([
+            f"- [{_text(row.title)}](<{quote(row.url, safe=':/?&=%#@+;,~!$*()-._')}>) — {_text(row.employer)}"
+            for row in group
+        ])
+    selected = [[], []]
+
+    def report():
+        lines = list(header)
+        for index, (title, none) in enumerate((
+                ("NEW POSTINGS", "No new postings."),
+                ("REMOVED POSTINGS", "No removed postings."))):
+            lines.extend(["", f"## {title}", ""])
+            lines.extend(selected[index] if groups[index] else [none])
+            omitted = len(groups[index]) - len(selected[index])
+            if omitted:
+                lines.append(f"{omitted} posting(s) omitted from this section.")
+        if any(len(selected[i]) < len(groups[i]) for i in range(2)):
+            lines.extend(["", "Report shortened to fit the Issue size budget. "
+                          "Full posting data remains in data/history.csv."])
+        return "\n".join(lines) + "\n"
+
+    # Alternate categories so a large new-posting section cannot hide removals.
+    # Keep complete rows only; an unusually large row must not block later rows.
+    for index in range(max(map(len, rendered), default=0)):
+        for category in range(2):
+            if index < len(rendered[category]):
+                selected[category].append(rendered[category][index])
+                if len(report().encode("utf-8")) > MAX_ISSUE_BYTES:
+                    selected[category].pop()
+    return report()
 
 
 def owned_day(issue):
@@ -96,11 +124,42 @@ class GhIssues:
             raise ValueError("repo must be owner/repository")
         self.endpoint = f"repos/{repo}/issues"
 
-    def _call(self, command):
+    def _call(self, command, *, payload=None):
+        def diagnostic(stderr):
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode("utf-8", errors="replace")
+            text = stderr or "no stderr supplied"
+            # Remove payload fields even if gh echoes JSON or decoded values.
+            values = [value for value in (payload or {}).values() if isinstance(value, str) and value]
+            values += [value for key, value in os.environ.items()
+                       if value and re.search(r"TOKEN|SECRET|PASSWORD|CREDENTIAL|API_KEY", key, re.I)]
+            for value in sorted(set(values), key=len, reverse=True):
+                for variant in (json.dumps(value)[1:-1],
+                                json.dumps(value, ensure_ascii=False)[1:-1], value):
+                    text = text.replace(variant, "[REDACTED]")
+            text = re.sub(r"(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)",
+                          "[REDACTED]", text)
+            text = re.sub(r"(?i)(authorization\s*[:=]\s*)(?:bearer|token|basic)?\s*\S+",
+                          r"\1[REDACTED]", text)
+            text = re.sub(r"(?i)((?:access_token|token|password|secret|api_key)\s*[=:]\s*)[^\s&]+",
+                          r"\1[REDACTED]", text)
+            text = re.sub(r"(https?://)[^/\s@]+@", r"\1[REDACTED]@", text)
+            text = " ".join(text.split())
+            if len(text) > MAX_DIAGNOSTIC_CHARS:
+                text = text[:MAX_DIAGNOSTIC_CHARS - 14] + "...[truncated]"
+            return text
+
         try:
             result = subprocess.run(command, capture_output=True, text=True, check=True, timeout=120)
-        except (OSError, subprocess.SubprocessError) as exc:
-            raise RuntimeError("GitHub CLI request failed; check workflow permissions/run logs") from exc
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(f"GitHub CLI request failed (exit code {exc.returncode}): "
+                               f"{diagnostic(exc.stderr)}") from None
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"GitHub CLI request timed out after {exc.timeout}s: "
+                               f"{diagnostic(exc.stderr)}") from None
+        except OSError as exc:
+            # Do not stringify exceptions: filenames/commands can contain secrets.
+            raise RuntimeError(f"GitHub CLI could not start (OSError errno={exc.errno})") from None
         return json.loads(result.stdout)
 
     def _write(self, method, endpoint, payload):
@@ -108,7 +167,7 @@ class GhIssues:
         with tempfile.TemporaryDirectory(prefix="job-watcher-issue-") as directory:
             path = Path(directory) / "request.json"
             path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-            return self._call(["gh", "api", "--method", method, endpoint, "--input", str(path)])
+            return self._call(["gh", "api", "--method", method, endpoint, "--input", str(path)], payload=payload)
 
     def list_issues(self):
         pages = self._call(["gh", "api", "--paginate", "--slurp",
