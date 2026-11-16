@@ -162,7 +162,8 @@ def test_cli_progress_is_flushed_before_transport_starts(monkeypatch, capsys):
 
     monkeypatch.setattr(builtins, 'print', checked_print)
     assert main(['--source', 'tyson_foods', '--dry-run'], transport_factory=EmptyTransport) == 0
-    assert capsys.readouterr().out == ('tyson_foods: complete unique=0 reported_total=0\n'
+    assert capsys.readouterr().out == ('tyson_foods: complete raw=0 unique=0 duplicates=0 reported_total=0 '
+                                       'latest_total=None min_total=None max_total=None offset=0 pages=1\n'
                                        'tyson_foods: OK raw=0 normalized=0\n')
     assert printed[-1][1]['flush'] is True
 

@@ -11,6 +11,10 @@ WORKDAY_PAGE_SIZE = 20
 # The audit's tiny limit bounded reconnaissance; it is not a production limit.
 
 
+def drift_tolerance(total):
+    return max(2, total // 200)
+
+
 def _valid_path(value):
     if not isinstance(value, str) or not value.startswith('/job/'):
         return None
@@ -147,18 +151,22 @@ class WorkdayAdapter:
 
     def fetch(self, source, capture, *, max_pages=5000, **options):
         offset, seen, initial_total = 0, set(), None
-        seen_pages, stable_total = set(), True
+        seen_pages, raw_rows = set(), 0
+        minimum_total = maximum_total = latest_total = None
 
         def capped():
             return source.capped_total_risk and initial_total == 2000
 
         def cap_failure():
-            raise AdapterError('2000-job board cap unresolved; exhaustive JSON partitions not validated',
+            raise AdapterError('2000-job board cap unresolved; incomplete source without validated JSON partitions',
                                failure_class='board_cap_unresolved')
 
         def total_reached():
-            return (initial_total is not None and initial_total > 0 and stable_total
-                    and not source.capped_total_risk and len(seen) >= initial_total)
+            if initial_total is None or initial_total == 0 or capped():
+                return False
+            # Offset coverage alone cannot certify a short server page. Require
+            # enough raw rows for the highest positive total observed.
+            return offset >= maximum_total and raw_rows >= maximum_total
 
         def complete():
             listings, _, diagnostics, raw_rows = _collect(source, capture.pages)
@@ -168,7 +176,10 @@ class WorkdayAdapter:
             if capture.progress:
                 if diagnostics['skipped_malformed']:
                     capture.progress(f"skipped {diagnostics['skipped_malformed']} malformed postings with no usable identity/title/job URL")
-                capture.progress(f'complete unique={len(seen)} reported_total={initial_total}')
+                capture.progress(f'complete raw={raw_rows} unique={len(seen)} duplicates={raw_rows-len(seen)} '
+                                 f'reported_total={initial_total} latest_total={latest_total} '
+                                 f'min_total={minimum_total} max_total={maximum_total} '
+                                 f'offset={offset} pages={capture.list_requests}')
 
         for _ in range(max_pages):
             if total_reached():
@@ -183,13 +194,21 @@ class WorkdayAdapter:
                 initial_total = total
                 if total > 5000 and not source.search_term:
                     raise AdapterError('board exceeds 5000; requires audited search configuration')
-            if total > 0 and total != initial_total:
-                stable_total = False
+            if total > 0:
+                minimum_total = total if minimum_total is None else min(minimum_total, total)
+                maximum_total = total if maximum_total is None else max(maximum_total, total)
+                latest_total = total
+                if maximum_total - minimum_total > drift_tolerance(initial_total):
+                    raise AdapterError('Workday total changed materially during pagination; retry source later')
+            if capped() and not batch:
+                cap_failure()
+            if len(batch) > self.page_size and not capped():
+                raise AdapterError('Workday page exceeds requested limit')
             if not batch:
-                if len(seen) < initial_total:
-                    raise AdapterError('empty page before initial total; incomplete source')
                 if capped():
                     cap_failure()
+                if initial_total and not total_reached():
+                    raise AdapterError('empty page before raw result coverage; incomplete source')
                 complete()
                 return
             page_ids = set()
@@ -204,21 +223,30 @@ class WorkdayAdapter:
             page_ids = frozenset(page_ids)
             new_ids = page_ids - seen
             duplicates = len(batch) - len(new_ids)
+            prior_raw_rows = raw_rows
+            raw_rows += len(batch)
             if duplicates and capture.progress:
                 noun = 'duplicate' if duplicates == 1 else 'duplicates'
                 capture.progress(f'page {capture.list_requests} added {len(new_ids)} new, {duplicates} {noun}')
+            next_offset = offset + self.page_size
+            covered = initial_total and next_offset >= maximum_total and raw_rows >= maximum_total
             if page_ids in seen_pages or not new_ids:
                 if capped():
                     cap_failure()
+                if (covered and prior_raw_rows >= minimum_total and
+                        minimum_total < maximum_total):
+                    offset = next_offset
+                    complete()
+                    return
                 reason = 'repeated Workday page/result set' if page_ids in seen_pages else 'non-empty page added zero new unique postings'
                 raise AdapterError(f'pagination stalled: {reason} (unique={len(seen)}, reported_total={initial_total}, offset={offset}, page_size={self.page_size})',
                                    failure_class='pagination_stalled')
             seen_pages.add(page_ids)
             seen.update(new_ids)
+            offset = next_offset
             if total_reached():
                 complete()
                 return
-            offset += self.page_size
         raise AdapterError('page safety limit reached; incomplete source', failure_class='pagination_stalled')
 
     def convert(self, source, pages):
