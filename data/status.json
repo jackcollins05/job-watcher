@@ -1,15 +1,15 @@
 {
-  "run_time": "2026-11-16T20:21:41.706358Z",
+  "run_time": "2026-11-16T22:11:02.261340Z",
   "first_run_date": "2026-11-14",
   "days_with_success": 3,
-  "open": 17655,
-  "new_today": 669,
-  "removed_today": 1048,
+  "open": 18036,
+  "new_today": 792,
+  "removed_today": 793,
   "sources": [
     {
       "name": "tyson_foods",
       "ok": true,
-      "count": 724
+      "count": 741
     },
     {
       "name": "keybank",
@@ -19,52 +19,52 @@
     {
       "name": "pepsico",
       "ok": true,
-      "count": 2604
+      "count": 2609
     },
     {
       "name": "jb_hunt",
       "ok": true,
-      "count": 439
+      "count": 438
     },
     {
       "name": "simmons_bank",
       "ok": true,
-      "count": 158
+      "count": 159
     },
     {
       "name": "bank_of_america",
       "ok": true,
-      "count": 2009
+      "count": 2008
     },
     {
       "name": "jpmorgan_chase",
       "ok": true,
-      "count": 989
+      "count": 991
     },
     {
       "name": "wells_fargo",
       "ok": true,
-      "count": 1295
+      "count": 1332
     },
     {
       "name": "huntington_bank",
       "ok": true,
-      "count": 719
+      "count": 724
     },
     {
       "name": "truist",
       "ok": true,
-      "count": 1368
+      "count": 1369
     },
     {
       "name": "pnc",
-      "ok": true,
-      "count": 1573
+      "ok": false,
+      "count": 0
     },
     {
       "name": "us_bank",
       "ok": true,
-      "count": 1151
+      "count": 1168
     },
     {
       "name": "capital_one",
@@ -74,12 +74,12 @@
     {
       "name": "fifth_third_bank",
       "ok": true,
-      "count": 986
+      "count": 993
     },
     {
       "name": "bmo",
       "ok": true,
-      "count": 990
+      "count": 1005
     }
   ]
 }
