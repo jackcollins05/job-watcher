@@ -315,7 +315,7 @@ def test_no_limit_dry_run_fetches_all_pages():
     fake = FakeTransport(first, second, {"total": 0, "jobPostings": []})
     result = fetch_source(SOURCES["tyson_foods"], fake, dry_run=True)
     assert result.ok and not result.truncated and result.raw["complete"]
-    assert len(fake.calls) == 3 and len(result.postings) == 2
+    assert len(fake.calls) == 2 and len(result.postings) == 2
 
 
 def test_cli_one_page_labels_truncation_and_progress(tmp_path, monkeypatch, capsys):
@@ -506,8 +506,8 @@ def test_workday_no_overlap_does_not_add_noisy_progress():
     progress = []
     result = fetch_source(SOURCES["tyson_foods"], fake, progress=progress.append)
     assert result.ok
-    assert progress == ["fetching page 1...", "fetching page 2...",
-                        "complete unique=25 reported_total=25"]
+    assert progress[:2] == ["fetching page 1...", "fetching page 2..."]
+    assert progress[-1].startswith("complete raw=25 unique=25 duplicates=0 reported_total=25")
 
 
 @pytest.mark.parametrize("unused_boundary", ["repeat", "empty"])
@@ -520,7 +520,7 @@ def test_total_reached_exactly_does_not_fetch_boundary_page(unused_boundary):
     assert result.ok and not result.truncated and result.raw["complete"]
     assert result.count == len(result.postings) == 20
     assert len(fake.calls) == 1 and len(fake.responses) == 1
-    assert progress[-1] == "complete unique=20 reported_total=20"
+    assert progress[-1].startswith("complete raw=20 unique=20 duplicates=0 reported_total=20")
     assert convert_raw(result.raw) == result.postings
 
 
@@ -534,7 +534,7 @@ def test_saved_tyson_total_with_later_zero_totals_completes_before_repeated_page
     assert result.ok and result.count == len(result.postings) == 735
     assert len({p.source_id for p in result.postings}) == 735
     assert len(fake.calls) == 37 and len(fake.responses) == 1
-    assert progress[-1] == "complete unique=735 reported_total=735"
+    assert progress[-1].startswith("complete raw=735 unique=735 duplicates=0 reported_total=735")
     assert fake.calls[-1][2]["payload"] == {
         "appliedFacets": {}, "limit": 20, "offset": 720, "searchText": ""}
 
@@ -559,7 +559,7 @@ def test_conflicting_positive_total_disables_early_completion():
     fake = FakeTransport(workday_batch(0, 20, 23), workday_batch(20, 3, 24),
                          workday_batch(23, 1, 0), {"total": 0, "jobPostings": []})
     result = fetch_source(SOURCES["tyson_foods"], fake)
-    assert result.ok and len(result.postings) == 24 and len(fake.calls) == 4
+    assert result.ok and len(result.postings) == 24 and len(fake.calls) == 3
 
 
 def test_short_page_below_reported_total_is_not_completion():
@@ -568,6 +568,41 @@ def test_short_page_below_reported_total_is_not_completion():
     result = fetch_source(SOURCES["tyson_foods"], fake)
     assert not result.ok and "pagination stalled" in result.error
     assert len(fake.calls) == 2 and not result.raw["complete"]
+
+
+def test_workday_raw_coverage_completes_with_fewer_unique_ids():
+    first = workday_batch(0, 20, 40)
+    second = workday_batch(18, 20, 40)
+    fake = FakeTransport(first, second)
+    progress = []
+    result = fetch_source(SOURCES["tyson_foods"], fake, progress=progress.append)
+    assert result.ok and result.count == 40 and len(result.postings) == 38
+    assert len({p.posting_id for p in result.postings}) == 38
+    assert len(fake.calls) == 2
+    assert progress[-1].startswith("complete raw=40 unique=38 duplicates=2 reported_total=40")
+
+
+def test_workday_duplicate_terminal_page_after_bounded_total_churn():
+    first = workday_batch(0, 20, 40)
+    second = workday_batch(20, 20, 42)
+    repeated = deepcopy(second)
+    fake = FakeTransport(first, second, repeated)
+    result = fetch_source(SOURCES["tyson_foods"], fake)
+    assert result.ok and result.count == 60 and len(result.postings) == 40
+    assert len({p.posting_id for p in result.postings}) == 40
+
+
+def test_workday_material_raw_shortfall_fails_after_expected_offsets():
+    fake = FakeTransport(workday_batch(0, 20, 45), workday_batch(20, 20, 45),
+                         workday_batch(40, 1, 45), {"total": 45, "jobPostings": []})
+    result = fetch_source(SOURCES["tyson_foods"], fake)
+    assert not result.ok and "raw result coverage" in result.error
+
+
+def test_workday_large_total_drift_fails():
+    fake = FakeTransport(workday_batch(0, 20, 40), workday_batch(20, 20, 50))
+    result = fetch_source(SOURCES["tyson_foods"], fake)
+    assert not result.ok and "total changed materially" in result.error
 
 
 def oracle_batch(start, size, total, offset, limit=25, outer_has_more=False):
