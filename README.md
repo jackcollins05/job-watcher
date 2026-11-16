@@ -691,6 +691,14 @@ job link. Baseline first_run rows are excluded from new postings; absent changes
 are explicitly `No new postings.` / `No removed postings.`. An issue exists on
 every completed run day even if there are zero changes or failed sources.
 
+Issue bodies are bounded to 48,000 UTF-8 bytes, retaining total new and removed
+counts. Complete rows are selected in posting-ID order, alternating new and
+removed categories to give both visibility. Oversized rows are skipped whole.
+Shortened reports explicitly disclose omitted counts in each section and point
+to `data/history.csv` for full posting data; history itself is never truncated.
+CLI failures include bounded, sanitized stderr and exit codes; timeouts and OS
+launch failures are reported separately without dumping request payloads.
+
 A hidden first-line ownership marker identifies this project's daily issues.
 The publisher paginates all issues, ignores PRs/unrelated issues, and updates or
 reopens the marked issue for the same date rather than duplicating it. It then
@@ -710,9 +718,12 @@ pure formatting/selection tests never contact GitHub.
 
 **Daily workflow:** [.github/workflows/daily.yml](.github/workflows/daily.yml).
 
-- Cron **`17 12 * * *`** means once daily at **12:17 UTC**, approximately **06:17
-  Central Standard Time / 07:17 Central Daylight Time**. GitHub scheduling may be
-  delayed; manual workflow_dispatch is also supported.
+- Primary cron **`17 12 * * *`**: **12:17 UTC / 06:17 CST / 07:17 CDT**.
+- Backup cron **`47 19 * * *`**: **19:47 UTC / 13:47 CST / 14:47 CDT**.
+  Both run daily; scheduling may be delayed. Manual `workflow_dispatch` remains
+  supported. Same-UTC-day runs replace source/date snapshots and update the same
+  dated Issue; they do not add another successful date or raw date. The backup
+  performs a full refresh, including existing failed-source deletion semantics.
 - Runs only for main, checks out current main, and uses Python **3.13**. It installs
   `.[test]`, runs pytest **before** production fetching, executes the pipeline,
   verifies raw-only CSV reproducibility, then upserts today's issue and closes
