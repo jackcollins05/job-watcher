@@ -50,10 +50,36 @@
       // Include configured employers with zero current openings, without inventing a count.
       for (const source of status.sources) { const name = J.names[source.name] || source.name; if (!employers.some(e => e.label === name)) employers.push({label:name,value:0}); }
       employers.sort((a,b) => b.value-a.value || a.label.localeCompare(b.label));
+      const picker = document.getElementById('compare-employer');
+      picker.innerHTML = '<option value="">Largest three by inventory</option>' + employers.map(e =>
+        `<option value="${J.escape(e.label)}">${J.escape(e.label)}</option>`).join('');
+      function compare() {
+        const selected = picker.value ? employers.filter(e => e.label === picker.value) : employers.slice(0,3);
+        const daily = dates.map(date => ({date}));
+        const series = selected.map((e,i) => {
+          const key = 'employer' + i;
+          newByDay(rows.filter(r => r.employer === e.label),dates).forEach((d,index) => { daily[index][key] = d.all; });
+          return {key,label:e.label};
+        });
+        const summary = document.getElementById('comparison-readout');
+        summary.textContent = '';
+        if (picker.value && selected.length) {
+          const employerRows = rows.filter(row => row.employer === picker.value);
+          const feeds = J.todayFeeds(employerRows,latest,'all');
+          const id = employerRows[0]?.source || status.sources.find(source => J.names[source.name] === picker.value)?.name;
+          summary.innerHTML = J.employerMark(id,picker.value) + ` ${J.escape(picker.value)} · ${J.number(selected[0].value)} open · ${J.number(J.financeOpen(employerRows).length)} finance & banking · ${J.number(feeds.added.length)} new · ${J.number(feeds.removed.length)} removed today`;
+        }
+        document.querySelectorAll('[data-compare]').forEach(button => {
+          button.setAttribute('aria-pressed',String(button.dataset.compare === picker.value));
+        });
+        if (series.length) J.charts.timeSeries('comparison-chart',daily,series,'Daily additions by employer');
+      }
+      picker.addEventListener('change',compare);
+      compare();
       const durations = removedDaysOpen(rows), middle = median(durations), share = removedWithinSevenDayShare(rows,latest), locations = locationPresentation(rows);
       const added = additions.reduce((s,d) => s+d.all,0), removed = removals.reduce((s,d) => s+d.all,0);
       document.getElementById('window-days').textContent = J.number(status.days_with_success);
-      document.getElementById('market-asof').textContent = `As of ${latest} UTC · ${J.number(rows.length)} tracked postings · failed sources retain their last known state.`;
+      document.getElementById('market-asof').textContent = `${status.first_run_date} — ${latest} UTC · ${J.number(rows.length)} tracked postings`;
       function copy(id,heading,paragraph) { document.getElementById(id+'-finding').textContent = heading; document.getElementById(id+'-explanation').textContent = paragraph; }
       copy('new', added ? `${J.number(added)} postings have entered the tracked market.` : 'No post-baseline additions have been observed yet.', 'These are first appearances after each source’s baseline, grouped by the date we first saw them. The chart compares all postings with Finance & Banking Analyst roles. Zero means no observed additions; it does not prove every source succeeded on that date.');
       J.charts.timeSeries('new-chart',additions,[{key:'all',label:'All tracked market'},{key:'role',label:'Finance & Banking'}],'New postings per UTC day');
@@ -61,7 +87,15 @@
       J.charts.timeSeries('removed-chart',removals,[{key:'all',label:'Removed postings'}],'Removed postings per UTC day');
       const leader = employers[0];
       copy('employer', leader && leader.value ? `${leader.label} leads with ${J.number(leader.value)} open postings — the largest tracked inventory.` : 'No open postings are currently recorded.', 'Every history row with status=open is grouped by employer, including postings outside the target role. All configured employers appear. Failed sources retain their last observed open inventory. JPMorgan Chase covers only its required analyst search.');
-      J.charts.bars('employer-chart',employers,'Open postings by employer');
+      J.charts.bars('employer-chart',employers,'Open postings by employer',true);
+      document.getElementById('employer-chart').addEventListener('click',event => {
+        const button = event.target.closest('[data-compare]');
+        if (button) {
+          picker.value = button.dataset.compare;
+          compare();
+          picker.focus();
+        }
+      });
       copy('duration',middle === null ? 'Median days open is not available yet.' : `The median observed time to removal is ${J.number(middle)} days.`, middle === null ? 'Insufficient post-baseline removals. The median will populate when a posting first observed after its source’s baseline is removed. Baseline postings have unknown true start dates and are excluded.' : `Among ${J.number(durations.length)} removed, non-baseline postings, days open is removed_date minus first_seen in UTC calendar days. This reports the median, not the mean; posted_date is not used.`);
       if (middle === null) J.charts.empty('duration-chart','INSUFFICIENT POST-BASELINE REMOVALS','No eligible duration observations yet.');
       else J.charts.histogram('duration-chart',durations,'Distribution of days open before removal');

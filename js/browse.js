@@ -47,7 +47,7 @@
         document.getElementById('results-caption').textContent = `${J.number(filtered.length)} matching open postings · ${latest} UTC · showing ${displayed.length ? (currentPage-1)*pageSize+1 : 0}–${Math.min(currentPage*pageSize,filtered.length)}`;
         document.getElementById('results').innerHTML = displayed.map(r => {
           const age = ageCache.get(r.posting_id), starred = saved.has(r.posting_id);
-          return `<tr><td data-label="Shortlist"><button class="star" data-star="${J.escape(r.posting_id)}" aria-pressed="${starred}" aria-label="${starred ? 'Remove from' : 'Add to'} shortlist: ${J.escape(r.title)}">${starred ? '★' : '☆'}</button></td><td data-label="Job title"><strong>${J.escape(r.title)}</strong>${r.department ? `<small>${J.escape(r.department)}</small>` : ''}<span class="role-tag">${r.in_role ? 'Finance / Banking Analyst' : 'Full source inventory'}</span></td><td data-label="Employer">${J.escape(r.employer)}</td><td data-label="Location"><span class="location-text" title="${J.escape(r.location || 'Not supplied')}">${J.escape(r.location || 'Not supplied')}</span></td><td data-label="Days open"><span class="age">${age === null ? 'BASELINE' : J.number(age) + ' days'}</span>${age === null ? '<small>Start unknown</small>' : ''}</td><td data-label="First seen"><time datetime="${r.first_seen}" title="${r.first_seen} UTC">${new Date(r.first_seen+'T00:00:00Z').toLocaleDateString('en-US',{timeZone:'UTC',month:'short',day:'numeric',year:'numeric'})}</time></td><td data-label="Apply">${J.applyLink(r)}</td></tr>`;
+          return `<tr><td data-label="Shortlist"><button class="star" data-star="${J.escape(r.posting_id)}" aria-pressed="${starred}" aria-label="${starred ? 'Remove from' : 'Add to'} shortlist: ${J.escape(r.title)}">${starred ? '★' : '☆'}</button></td><td data-label="Job title"><strong>${J.escape(r.title)}</strong>${r.department ? `<small>${J.escape(r.department)}</small>` : ''}<span class="role-tag">${r.in_role ? 'Finance / Banking Analyst' : 'Full source inventory'}</span></td><td data-label="Employer"><span class="employer-label">${J.employerMark(r.source,r.employer,16)}<span>${J.escape(r.employer)}</span></span></td><td data-label="Location"><span class="location-text" title="${J.escape(r.location || 'Not supplied')}">${J.escape(r.location || 'Not supplied')}</span></td><td data-label="Days open"><span class="age">${age === null ? 'BASELINE' : J.number(age) + (age === 1 ? ' day' : ' days')}</span>${age === null ? '<small>Start unknown</small>' : ''}</td><td data-label="First seen"><time datetime="${r.first_seen}" title="${r.first_seen} UTC">${new Date(r.first_seen+'T00:00:00Z').toLocaleDateString('en-US',{timeZone:'UTC',month:'short',day:'numeric',year:'numeric'})}</time></td><td data-label="Apply">${J.applyLink(r)}</td></tr>`;
         }).join('');
         document.getElementById('no-results').hidden = filtered.length > 0;
         document.getElementById('page-label').textContent = `Page ${currentPage} of ${totalPages}`;
@@ -55,9 +55,11 @@
         document.getElementById('next').disabled = currentPage === totalPages;
       }
       function update() { currentPage = 1; render(); }
+      document.getElementById('previous').addEventListener('click',() => { currentPage--; render(); });
+      document.getElementById('next').addEventListener('click',() => { currentPage++; render(); });
       form.addEventListener('submit',e => e.preventDefault());
       form.addEventListener('input',e => { clearTimeout(timer); if (['query','location'].includes(e.target.name)) timer = setTimeout(update,180); else update(); });
-      document.getElementById('reset').addEventListener('click',() => { clearTimeout(timer); form.reset(); onlySaved = false; update(); });
+      document.getElementById('reset').addEventListener('click',() => { clearTimeout(timer); HTMLFormElement.prototype.reset.call(form); onlySaved = false; update(); });
       document.getElementById('shortlist-toggle').addEventListener('click',() => { onlySaved = !onlySaved; update(); });
       document.getElementById('results').addEventListener('click',e => {
         const button = e.target.closest('[data-star]'); if (!button) return;
@@ -69,7 +71,7 @@
         (replacement || document.getElementById('shortlist-toggle')).focus();
       });
       window.addEventListener('storage',e => { if (e.key === J.SHORTLIST_KEY) { saved = J.readShortlist(storage); render(); } });
-      document.getElementById('browse-asof').textContent = `${J.number(status.open)} open postings in the full inventory. Finance & Banking is the default view.`;
+      document.getElementById('browse-asof').textContent = `${J.number(status.open)} tracked openings`;
       render();
     } catch (e) { J.showError(e); }
   }

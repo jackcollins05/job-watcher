@@ -23,14 +23,14 @@
       for (const key of ['open','new','removed']) document.querySelectorAll(`[data-relevant-count="${key}"]`).forEach(n => { n.textContent = J.number(relevantCounts[key]); n.removeAttribute('data-loading'); });
       const healthy = status.sources.filter(s => s.ok).length;
       document.getElementById('health-count').textContent = `${healthy} / ${status.sources.length}`;
-      document.getElementById('health-message').textContent = healthy === status.sources.length ? 'All sources succeeded in the latest run' : `${status.sources.length-healthy} source(s) failed in the latest run`;
+      document.getElementById('health-message').textContent = healthy === status.sources.length ? 'Collection healthy' : `${status.sources.length-healthy} source(s) failed in the latest run`;
       document.getElementById('source-summary').textContent = healthy === status.sources.length ? `All ${status.sources.length} employers returned data in the latest run.` : `${healthy} of ${status.sources.length} sources succeeded. Failures remain visible below.`;
       document.getElementById('employer-total').textContent = status.sources.length;
-      document.getElementById('source-title').textContent = `${status.sources.length} sources. One daily market view.`;
+      document.getElementById('source-title').textContent = 'Source health';
       const sync = document.getElementById('last-run');
       sync.dateTime = status.run_time;
-      sync.textContent = new Date(status.run_time).toLocaleString('en-US',{timeZone:'America/Chicago',month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit',timeZoneName:'short'});
-      document.getElementById('last-run-utc').textContent = `UTC: ${status.run_time}`;
+      sync.textContent = new Date(status.run_time).toLocaleDateString('en-US',{timeZone:'UTC',month:'long',day:'numeric',year:'numeric'});
+      document.getElementById('last-run-utc').textContent = status.run_time.slice(11,16) + ' UTC';
       document.getElementById('sources').innerHTML = status.sources.map((s,i) => `<article class="source ${s.ok?'':'failed'}"><div class="source-heading"><h3>${J.escape(J.names[s.name] || s.name)}</h3><span class="led" aria-hidden="true"></span></div><div class="source-bottom"><span class="source-state">${s.ok ? '✓ OK · latest run' : '× FAILED · latest run'}</span><span><strong>${J.number(s.count)}</strong> records${s.ok?'':' this run'}</span></div></article>`).join('');
       const allFeeds = J.todayFeeds(rows,latest,'all');
       const baseline = document.getElementById('baseline');
@@ -47,6 +47,7 @@
         if (event.target.name === 'feed_scope') renderFeeds(event.target.value);
       });
       renderFeeds();
+      J.renderLandscape?.({rows,status,latest,allFeeds});
     } catch (e) { J.showError(e); }
   }
   if (typeof document !== 'undefined' && document.body.dataset.page === 'today') start();

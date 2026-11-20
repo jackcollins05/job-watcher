@@ -3,6 +3,33 @@
   'use strict';
   const JW = root.JW = root.JW || {};
   const names = {tyson_foods:'Tyson Foods', keybank:'KeyBank', pepsico:'PepsiCo', jb_hunt:'J.B. Hunt', simmons_bank:'Simmons Bank', bank_of_america:'Bank of America', jpmorgan_chase:'JPMorgan Chase', wells_fargo:'Wells Fargo', huntington_bank:'Huntington Bank', truist:'Truist', pnc:'PNC', us_bank:'U.S. Bank', capital_one:'Capital One', fifth_third_bank:'Fifth Third Bank', bmo:'BMO'};
+  // Source IDs match status.sources[].name and history.csv's source column.
+  const employerAssets = Object.freeze({
+    bank_of_america:'assets/employers/bank-of-america.svg',
+    bmo:'assets/employers/bmo.png',
+    capital_one:'assets/employers/capital-one.png',
+    fifth_third_bank:'assets/employers/fifth-third-bank.png',
+    huntington_bank:'assets/employers/huntington-bank.png',
+    jb_hunt:'assets/employers/jb-hunt.png',
+    jpmorgan_chase:'assets/employers/jpmorgan-chase.png',
+    keybank:'assets/employers/keybank.png',
+    pepsico:'assets/employers/pepsico.png',
+    pnc:'assets/employers/pnc.svg',
+    simmons_bank:'assets/employers/simmons-bank.png',
+    truist:'assets/employers/truist.png',
+    tyson_foods:'assets/employers/tyson-foods.png',
+    us_bank:'assets/employers/us-bank.svg',
+    wells_fargo:'assets/employers/wells-fargo.png'
+  });
+  function employerMark(id, name, size = 18, centered = false) {
+    const parts = String(name || id || '?').match(/[A-Z]+(?=[A-Z][a-z]|[^A-Za-z]|$)|[A-Z]?[a-z]+|[0-9]+/g) || ['?'];
+    const initials = parts.length === 1 ? parts[0].slice(0,3) : parts.map(part => part[0]).join('').slice(0,3);
+    const path = Object.hasOwn(employerAssets,id) ? employerAssets[id] : '';
+    const origin = centered ? ` x="${-size/2}" y="${-size/2}"` : '';
+    return `<svg class="employer-mark" width="${size}" height="${size}"${origin} viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+      <text x="50" y="50" text-anchor="middle" dy=".34em">${escape(initials.toUpperCase())}</text>
+      ${path ? `<image href="${path}" width="100" height="100" onload="this.parentNode.classList.add('is-loaded')" onerror="this.parentNode.classList.remove('is-loaded')"/>` : ''}</svg>`;
+  }
   const columns = ['posting_id','source','source_id','employer','title','location','department','posted_date','url','in_role','first_run','first_seen','last_seen','status','removed_date'];
   const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const number = value => new Intl.NumberFormat('en-US').format(value);
@@ -111,7 +138,7 @@
   function connection(cached = false) {
     const offline = !navigator.onLine || cached;
     const node = document.getElementById('connection');
-    if (node) { node.classList.toggle('is-offline',offline); node.textContent = !navigator.onLine ? 'OFFLINE MODE / Showing last successfully loaded data' : cached ? 'CACHED SNAPSHOT / Fresh data unavailable — showing last loaded data' : 'NETWORK MODE / Last run shown below'; }
+    if (node) { node.classList.toggle('is-offline',offline); node.textContent = !navigator.onLine ? 'OFFLINE MODE / Showing last successfully loaded data' : cached ? 'CACHED SNAPSHOT / Fresh data unavailable — showing last loaded data' : 'Snapshot connected'; }
   }
   let workerPromise;
   function prepareWorker() {
@@ -142,8 +169,9 @@
       const rows = historyRows(csv); validateData(status,rows);
       const cached = responses.some(r => r.headers.get('X-Job-Watcher-Cache') === 'offline');
       connection(cached);
+      document.querySelectorAll('[data-network]').forEach(n => { n.textContent = `Network · ${status.sources.length} employers`; });
       window.addEventListener('offline', () => connection(true));
-      window.addEventListener('online', () => { connection(cached); document.getElementById('connection').textContent = 'CONNECTION RESTORED / Loaded snapshot shown — reload for fresh data'; });
+      window.addEventListener('online', () => { connection(cached); document.getElementById('connection').classList.add('restored'); document.getElementById('connection').textContent = 'CONNECTION RESTORED / Loaded snapshot shown — reload for fresh data'; });
       document.querySelectorAll('[data-sync]').forEach(n => { n.textContent = new Date(status.run_time).toLocaleString('en-US',{timeZone:'UTC',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}) + ' UTC'; });
       return {status,rows,latest:latestDate(status),cached};
     })();
@@ -157,6 +185,6 @@
     button?.addEventListener('click', async () => { if (prompt) { await prompt.prompt(); await prompt.userChoice; prompt = null; button.hidden = true; } });
     window.addEventListener('appinstalled', () => { if (button) button.hidden = true; });
   }
-  Object.assign(JW,{names,columns,escape,number,parseCSV,day,daysBetween,dateRange,latestDate,historyRows,newToday,removedToday,financeOpen,todayFeeds,validateData,safeURL,applyLink,SHORTLIST_KEY,readShortlist,saveShortlist,toggleShortlist,loadData,showError});
+  Object.assign(JW,{names,employerAssets,employerMark,columns,escape,number,parseCSV,day,daysBetween,dateRange,latestDate,historyRows,newToday,removedToday,financeOpen,todayFeeds,validateData,safeURL,applyLink,SHORTLIST_KEY,readShortlist,saveShortlist,toggleShortlist,loadData,showError});
   if (typeof document !== 'undefined') initialize();
 })(globalThis);
