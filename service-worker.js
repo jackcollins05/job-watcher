@@ -1,9 +1,9 @@
 /* Network-first coherent status/history pairs; versioned, local-only app shell. */
 'use strict';
-const VERSION = 'jw-shell-v3';
+const VERSION = 'jw-shell-v5';
 const META = 'jw-snapshot-meta-v1';
 const DATA_PREFIX = 'jw-data-v1-';
-const SHELL = ['./','index.html','browse.html','market.html','css/styles.css','js/common.js','js/today.js','js/browse.js','js/market.js','js/charts.js','manifest.webmanifest','assets/favicon.svg','assets/icon-192.png','assets/icon-512.png'];
+const SHELL = ['./','index.html','browse.html','market.html','css/styles.css','js/common.js','js/today.js','js/landscape.js','js/browse.js','js/market.js','js/charts.js','manifest.webmanifest','assets/favicon.svg','assets/icon-192.png','assets/icon-512.png'];
 const base = self.registration.scope;
 const dataPaths = ['data/status.json','data/history.csv'];
 const pointerURL = new URL('__cached_snapshot__',base).href;
@@ -49,6 +49,7 @@ async function refreshPair() {
   return {responses,cached:false};
 }
 importScripts('js/common.js');
+SHELL.push(...Object.values(JW.employerAssets));
 async function dataResponse(path) {
   if (!pendingPair) {
     pendingPair = refreshPair();

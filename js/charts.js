@@ -22,10 +22,10 @@
   function frame(id,title,visual,headers,rows,legend='') {
     document.getElementById(id).innerHTML = `${legend}${visual}${table(headers,rows,title)}`;
   }
-  function bars(id,items,title) {
+  function bars(id,items,title,selectable = false) {
     if (!items.length) return empty(id,'NO OBSERVATIONS',title);
     const max = Math.max(1,...items.map(i => i.value));
-    const chart = `<div class="ranked-chart" role="group" aria-label="${E(title)}"><ol>${items.map((item,i) => `<li class="ranking-row ${i===0?'ranking-leader':''}"><span class="rank-position" aria-hidden="true">${String(i+1).padStart(2,'0')}</span><span class="rank-label" title="${E(item.label)}">${E(item.label)}</span><svg class="ranking-bar" viewBox="0 0 1000 12" preserveAspectRatio="none" aria-hidden="true"><rect class="bar-track" x="0" y="3" width="1000" height="6"/><rect class="bar-fill ${i===0?'leading':''}" x="0" y="3" width="${item.value/max*1000}" height="6"/></svg><span class="rank-value">${N(item.value)}</span></li>`).join('')}</ol></div>`;
+    const chart = `<div class="ranked-chart" role="group" aria-label="${E(title)}"><ol>${items.map((item,i) => `<li class="ranking-row ${i===0?'ranking-leader':''}"><span class="rank-position" aria-hidden="true">${String(i+1).padStart(2,'0')}</span><${selectable ? 'button' : 'span'} class="rank-label" title="${E(item.label)}"${selectable ? ` data-compare="${E(item.label)}" aria-pressed="false"` : ''}>${E(item.label)}</${selectable ? 'button' : 'span'}><svg class="ranking-bar" viewBox="0 0 1000 12" preserveAspectRatio="none" aria-hidden="true"><rect class="bar-track" x="0" y="3" width="1000" height="6"/><rect class="bar-fill ${i===0?'leading':''}" x="0" y="3" width="${item.value/max*1000}" height="6"/></svg><span class="rank-value">${N(item.value)}</span></li>`).join('')}</ol></div>`;
     frame(id,title,chart,['Group','Count'],items.map(i => [i.label,i.value]));
   }
   function timeSeries(id,items,series,title) {
@@ -34,7 +34,7 @@
     const height=width<450?260:300, left=45, right=width-18, bottom=height-43;
     const observedMax = items.reduce((max,item)=>Math.max(max,...series.map(s=>item[s.key])),0);
     const magnitude = Math.pow(10,Math.floor(Math.log10(Math.max(1,observedMax))));
-    const max=[1,2,5,10].map(n=>n*magnitude).find(n=>n>=Math.max(1,observedMax));
+    const max=[1,2,2.5,5,10].map(n=>n*magnitude).find(n=>Number.isInteger(n) && n>=Math.max(1,observedMax));
     const x=i=>items.length===1 ? (left+right)/2 : left+i/(items.length-1)*(right-left);
     const y=value=>bottom-value/max*(bottom-28);
     let body='';
@@ -48,11 +48,11 @@
     }
     series.forEach((s,k)=>{
       const points=items.map((item,i)=>`${x(i)},${y(item[s.key])}`).join(' ');
-      if(k===0&&items.length>1) body+=`<defs><linearGradient id="${id}-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7fdbdf" stop-opacity=".13"/><stop offset="1" stop-color="#7fdbdf" stop-opacity="0"/></linearGradient></defs><polygon points="${x(0)},${bottom} ${points} ${x(items.length-1)},${bottom}" fill="url(#${id}-area)"/>`;
+      if(k===0&&items.length>1) body+=`<defs><linearGradient id="${id}-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9eb2c7" stop-opacity=".13"/><stop offset="1" stop-color="#9eb2c7" stop-opacity="0"/></linearGradient></defs><polygon points="${x(0)},${bottom} ${points} ${x(items.length-1)},${bottom}" fill="url(#${id}-area)"/>`;
       body+=`<polyline class="line-series series-${k}" points="${points}"/>`;
       if(items.length<=90) items.forEach((item,i)=>{body+=`<circle class="point series-${k}" cx="${x(i)}" cy="${y(item[s.key])}" r="${k?3:4.5}"><title>${item.date}: ${E(s.label)} ${N(item[s.key])}</title></circle>`;});
     });
-    const legend=`<div class="chart-legend">${series.map((s,i)=>`<span class="legend-${i}"><i aria-hidden="true"></i>${E(s.label)} <strong>${N(items[items.length-1][s.key])}</strong><small>${i?'dashed':'solid'} · latest day</small></span>`).join('')}</div>`;
+    const legend=`<div class="chart-legend">${series.map((s,i)=>`<span class="legend-${i}"><i aria-hidden="true"></i>${E(s.label)} <strong>${N(items[items.length-1][s.key])}</strong><small>${['solid','dashed','dotted'][i]} · latest day</small></span>`).join('')}</div>`;
     frame(id,title,svg(id,title,body,width,height),['UTC date',...series.map(s=>s.label)],items.map(i=>[i.date,...series.map(s=>i[s.key])]),legend);
     watchWidth(node,()=>timeSeries(id,items,series,title));
   }
